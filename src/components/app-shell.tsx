@@ -13,6 +13,7 @@ import { SearchView } from '@/components/search-view';
 import { DiscoveryView } from '@/components/discovery-view';
 import { ProfileView } from '@/components/profile-view';
 import { PostDetail } from '@/components/post-detail';
+import { TwitterConnect } from '@/components/twitter-connect';
 
 const pageComponents: Record<Page, React.ComponentType> = {
   home: HomeFeed,
@@ -24,12 +25,18 @@ const pageComponents: Record<Page, React.ComponentType> = {
 };
 
 export function AppShell() {
-  const { currentPage, setBookmarks, setCollections, setTags, selectedBookmark, isDetailOpen } = useAppStore();
+  const { user, setBookmarks, setCollections, setTags, selectedBookmark, isDetailOpen, currentPage } = useAppStore();
   const [isDataLoaded, setIsDataLoaded] = useState(false);
   const hasLoaded = useRef(false);
 
-  // Load all data on mount
+  const isTwitterConnected = user?.xConnected || false;
+
+  // Load all data on mount (only when Twitter is connected)
   useEffect(() => {
+    if (!isTwitterConnected) {
+      return;
+    }
+
     if (hasLoaded.current) return;
     hasLoaded.current = true;
 
@@ -54,7 +61,19 @@ export function AppShell() {
     }
     load();
     return () => { cancelled = true; };
-  }, [setBookmarks, setCollections, setTags]);
+  }, [isTwitterConnected, setBookmarks, setCollections, setTags]);
+
+  // If Twitter not connected, show connect screen
+  if (!isTwitterConnected) {
+    return (
+      <div className="min-h-screen flex flex-col bg-background">
+        <Header />
+        <main className="flex-1">
+          <TwitterConnect />
+        </main>
+      </div>
+    );
+  }
 
   const PageComponent = pageComponents[currentPage];
 

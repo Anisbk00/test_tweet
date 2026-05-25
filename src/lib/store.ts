@@ -10,6 +10,7 @@ interface User {
   username: string | null;
   avatarUrl: string | null;
   xUsername: string | null;
+  xConnected: boolean;
 }
 
 interface Bookmark {

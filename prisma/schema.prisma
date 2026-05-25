@@ -17,6 +17,8 @@ model User {
   xUsername     String?
   xAccessToken  String?   // encrypted
   xRefreshToken String?   // encrypted
+  xCookies      String?   // JSON: encrypted Twitter cookies (auth_token, ct0, etc.)
+  xConnected    Boolean   @default(false) // whether Twitter is connected
   passwordHash  String?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt

@@ -28,18 +28,27 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
 
 // Auth
 export const auth = {
-  login: (email: string, password: string) =>
-    apiFetch<{ token: string; user: any }>('/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ email, password }),
-    }),
   register: (email: string, password: string, name: string) =>
     apiFetch<{ token: string; user: any }>('/auth/register', {
       method: 'POST',
       body: JSON.stringify({ email, password, name }),
     }),
+  login: (email: string, password: string) =>
+    apiFetch<{ token: string; user: any }>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    }),
   me: () => apiFetch<any>('/auth/me'),
   logout: () => apiFetch<void>('/auth/logout', { method: 'POST' }),
+  connectTwitter: (authToken: string, ct0: string) =>
+    apiFetch<{ success: boolean }>('/auth/connect-twitter', {
+      method: 'POST',
+      body: JSON.stringify({ authToken, ct0 }),
+    }),
+  disconnectTwitter: () =>
+    apiFetch<{ success: boolean }>('/auth/disconnect-twitter', {
+      method: 'POST',
+    }),
 };
 
 // Bookmarks
@@ -134,9 +143,4 @@ export const discovery = {
 export const sync = {
   status: () => apiFetch<any>('/sync/status'),
   trigger: () => apiFetch<any>('/sync/trigger', { method: 'POST' }),
-};
-
-// Seed
-export const seed = {
-  run: () => apiFetch<any>('/seed', { method: 'POST' }),
 };

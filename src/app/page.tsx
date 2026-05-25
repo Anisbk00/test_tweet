@@ -2,24 +2,23 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useAppStore, type Page } from '@/lib/store';
+import { useAppStore } from '@/lib/store';
 import * as api from '@/lib/api';
 import { LoginScreen } from '@/components/login-screen';
 import { AppShell } from '@/components/app-shell';
 
 export default function Home() {
-  const { isAuthenticated, token, setAuth, setCurrentPage, currentPage } = useAppStore();
+  const { isAuthenticated, token, setAuth } = useAppStore();
   const [isInitialized, setIsInitialized] = useState(false);
-  const [isSeeding, setIsSeeding] = useState(false);
 
-  // Initialize app - check auth, seed if needed
+  // Initialize app - check auth
   useEffect(() => {
     async function init() {
       if (token) {
         try {
           const user = await api.auth.me();
-          if (user) {
-            setAuth(token, user);
+          if (user?.user) {
+            setAuth(token, user.user);
           }
         } catch {
           useAppStore.getState().logout();
@@ -35,22 +34,9 @@ export default function Home() {
     setAuth(result.token, result.user);
   }, [setAuth]);
 
-  const handleSeedAndLogin = useCallback(async () => {
-    setIsSeeding(true);
-    try {
-      await api.seed.run();
-      const result = await api.auth.login('demo@bookmarkvault.app', 'password');
-      setAuth(result.token, result.user);
-    } catch (err) {
-      console.error('Seed failed:', err);
-      try {
-        const result = await api.auth.login('demo@bookmarkvault.app', 'password');
-        setAuth(result.token, result.user);
-      } catch (err2) {
-        console.error('Login failed:', err2);
-      }
-    }
-    setIsSeeding(false);
+  const handleRegister = useCallback(async (email: string, password: string, name: string) => {
+    const result = await api.auth.register(email, password, name);
+    setAuth(result.token, result.user);
   }, [setAuth]);
 
   if (!isInitialized) {
@@ -76,8 +62,7 @@ export default function Home() {
     return (
       <LoginScreen
         onLogin={handleLogin}
-        onSeedAndLogin={handleSeedAndLogin}
-        isSeeding={isSeeding}
+        onRegister={handleRegister}
       />
     );
   }

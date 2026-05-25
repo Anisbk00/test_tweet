@@ -1,18 +1,19 @@
 'use client';
 
 import { useState } from 'react';
-import { motion } from 'framer-motion';
-import { Bookmark, Sparkles, ArrowRight, Loader2 } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Bookmark, ArrowRight, Loader2, UserPlus, LogIn } from 'lucide-react';
 
 interface LoginScreenProps {
   onLogin: (email: string, password: string) => Promise<void>;
-  onSeedAndLogin: () => Promise<void>;
-  isSeeding: boolean;
+  onRegister: (email: string, password: string, name: string) => Promise<void>;
 }
 
-export function LoginScreen({ onLogin, onSeedAndLogin, isSeeding }: LoginScreenProps) {
+export function LoginScreen({ onLogin, onRegister }: LoginScreenProps) {
+  const [mode, setMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
@@ -21,9 +22,13 @@ export function LoginScreen({ onLogin, onSeedAndLogin, isSeeding }: LoginScreenP
     setError('');
     setIsLoading(true);
     try {
-      await onLogin(email, password);
+      if (mode === 'login') {
+        await onLogin(email, password);
+      } else {
+        await onRegister(email, password, name);
+      }
     } catch (err: any) {
-      setError(err.message || 'Invalid credentials');
+      setError(err.message || 'Something went wrong');
     }
     setIsLoading(false);
   };
@@ -73,7 +78,7 @@ export function LoginScreen({ onLogin, onSeedAndLogin, isSeeding }: LoginScreenP
             </motion.p>
           </div>
 
-          {/* Login Form */}
+          {/* Form */}
           <motion.form
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -81,6 +86,24 @@ export function LoginScreen({ onLogin, onSeedAndLogin, isSeeding }: LoginScreenP
             onSubmit={handleSubmit}
             className="space-y-4"
           >
+            <AnimatePresence mode="wait">
+              {mode === 'register' && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                >
+                  <input
+                    type="text"
+                    placeholder="Your name"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    className="w-full px-4 py-3.5 rounded-xl bg-secondary/50 border border-border/50 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500/50 transition-all"
+                  />
+                </motion.div>
+              )}
+            </AnimatePresence>
+
             <div>
               <input
                 type="email"
@@ -88,6 +111,7 @@ export function LoginScreen({ onLogin, onSeedAndLogin, isSeeding }: LoginScreenP
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full px-4 py-3.5 rounded-xl bg-secondary/50 border border-border/50 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500/50 transition-all"
+                required
               />
             </div>
             <div>
@@ -97,6 +121,8 @@ export function LoginScreen({ onLogin, onSeedAndLogin, isSeeding }: LoginScreenP
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="w-full px-4 py-3.5 rounded-xl bg-secondary/50 border border-border/50 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500/50 transition-all"
+                required
+                minLength={6}
               />
             </div>
 
@@ -119,47 +145,40 @@ export function LoginScreen({ onLogin, onSeedAndLogin, isSeeding }: LoginScreenP
             >
               {isLoading ? (
                 <Loader2 className="w-5 h-5 animate-spin" />
+              ) : mode === 'login' ? (
+                <>
+                  <LogIn className="w-4 h-4" />
+                  Sign In
+                </>
               ) : (
                 <>
-                  Sign In
-                  <ArrowRight className="w-4 h-4" />
+                  <UserPlus className="w-4 h-4" />
+                  Create Account
                 </>
               )}
             </motion.button>
           </motion.form>
 
-          {/* Demo Button */}
+          {/* Toggle mode */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.7 }}
-            className="mt-6"
+            className="mt-6 text-center"
           >
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-border/50" />
-              </div>
-              <div className="relative flex justify-center text-xs">
-                <span className="bg-background px-3 text-muted-foreground">or try the demo</span>
-              </div>
-            </div>
-
-            <motion.button
-              onClick={onSeedAndLogin}
-              disabled={isSeeding}
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              className="mt-4 w-full py-3.5 rounded-xl border border-border/50 bg-secondary/30 text-foreground font-medium hover:bg-secondary/60 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+            <button
+              onClick={() => {
+                setMode(mode === 'login' ? 'register' : 'login');
+                setError('');
+              }}
+              className="text-sm text-muted-foreground hover:text-foreground transition-colors"
             >
-              {isSeeding ? (
-                <Loader2 className="w-5 h-5 animate-spin" />
+              {mode === 'login' ? (
+                <>Don&apos;t have an account? <span className="text-amber-400 font-medium">Sign up</span></>
               ) : (
-                <>
-                  <Sparkles className="w-4 h-4 text-amber-400" />
-                  Launch Demo
-                </>
+                <>Already have an account? <span className="text-amber-400 font-medium">Sign in</span></>
               )}
-            </motion.button>
+            </button>
           </motion.div>
         </motion.div>
       </div>
@@ -171,7 +190,7 @@ export function LoginScreen({ onLogin, onSeedAndLogin, isSeeding }: LoginScreenP
         transition={{ delay: 1 }}
         className="text-center py-6 text-xs text-muted-foreground/50 relative z-10"
       >
-        Made with love for the X community
+        Connect your X/Twitter account after signing in
       </motion.div>
     </div>
   );

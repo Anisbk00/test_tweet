@@ -7,6 +7,7 @@ import { PostCard } from '@/components/post-card';
 import { TrendingTag } from '@/components/trending-tag';
 import { RefreshCw, SlidersHorizontal, LayoutGrid, List } from 'lucide-react';
 import * as api from '@/lib/api';
+import { toast } from 'sonner';
 
 type SortOption = 'savedAt' | 'postedAt' | 'likeCount';
 type ViewMode = 'masonry' | 'list';
@@ -41,11 +42,17 @@ export function HomeFeed() {
   const handleSync = useCallback(async () => {
     setIsSyncing(true);
     try {
-      await api.sync.trigger();
+      const result = await api.sync.trigger();
       const res = await api.bookmarks.list('limit=100');
       setBookmarks(res.data || []);
-    } catch (err) {
+      if (result.success) {
+        toast.success(`Synced ${result.syncedCount || 0} bookmarks`);
+      } else {
+        toast.error(result.error || 'Sync failed');
+      }
+    } catch (err: any) {
       console.error('Sync failed:', err);
+      toast.error(err.message || 'Sync failed. Make sure Twitter is connected.');
     }
     setIsSyncing(false);
   }, [setBookmarks]);

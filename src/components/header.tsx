@@ -14,7 +14,9 @@ const navItems: { page: Page; icon: React.ComponentType<any>; label: string }[] 
 ];
 
 export function Header() {
-  const { currentPage, setCurrentPage } = useAppStore();
+  const { currentPage, setCurrentPage, user } = useAppStore();
+
+  const isConnected = user?.xConnected || false;
 
   return (
     <header className="sticky top-0 z-50 glass border-b border-border/50 safe-top">
@@ -66,10 +68,12 @@ export function Header() {
           })}
         </nav>
 
-        {/* Sync status */}
+        {/* Connection status */}
         <div className="flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/50" />
-          <span className="text-xs text-muted-foreground hidden sm:block">Synced</span>
+          <div className={`w-2 h-2 rounded-full shadow-sm ${isConnected ? 'bg-emerald-400 shadow-emerald-400/50' : 'bg-muted-foreground/50'}`} />
+          <span className="text-xs text-muted-foreground hidden sm:block">
+            {isConnected ? `@${user?.xUsername || 'connected'}` : 'Not connected'}
+          </span>
         </div>
       </div>
     </header>

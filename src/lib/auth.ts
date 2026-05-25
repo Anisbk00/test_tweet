@@ -128,6 +128,7 @@ export async function getCurrentUser(request: NextRequest) {
       avatarUrl: true,
       xUserId: true,
       xUsername: true,
+      xConnected: true,
       createdAt: true,
       updatedAt: true,
     },

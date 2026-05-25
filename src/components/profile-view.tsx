@@ -5,7 +5,7 @@ import { motion } from 'framer-motion';
 import { useAppStore } from '@/lib/store';
 import * as api from '@/lib/api';
 import { formatCount, getInitials, getAvatarColor } from '@/lib/utils';
-import { User, Bookmark, FolderOpen, Tag, TrendingUp, Calendar, LogOut, RefreshCw, BarChart3, Hash, Star } from 'lucide-react';
+import { User, Bookmark, FolderOpen, Tag, TrendingUp, Calendar, LogOut, RefreshCw, BarChart3, Hash, Star, Unplug, Link2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 export function ProfileView() {
@@ -50,6 +50,21 @@ export function ProfileView() {
   const handleLogout = useCallback(() => {
     logout();
   }, [logout]);
+
+  const handleDisconnectTwitter = useCallback(async () => {
+    try {
+      await api.auth.disconnectTwitter();
+      toast.success('Twitter disconnected');
+      // Refresh user data
+      const meResult = await api.auth.me();
+      const token = useAppStore.getState().token;
+      if (meResult?.user && token) {
+        useAppStore.getState().setAuth(token, meResult.user);
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to disconnect');
+    }
+  }, []);
 
   // Activity heatmap - last 12 weeks
   const heatmapData = (() => {
@@ -277,17 +292,47 @@ export function ProfileView() {
       </motion.div>
 
       {/* Logout */}
-      <motion.button
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.5 }}
-        whileTap={{ scale: 0.98 }}
-        onClick={handleLogout}
-        className="w-full py-3 rounded-xl border border-border/30 text-muted-foreground text-sm hover:text-red-400 hover:border-red-400/30 hover:bg-red-400/5 transition-colors flex items-center justify-center gap-2"
-      >
-        <LogOut className="w-4 h-4" />
-        Sign Out
-      </motion.button>
+      <div className="space-y-2 mt-8">
+        {/* Twitter connection status */}
+        <div className="p-4 rounded-2xl bg-card/50 border border-border/20 flex items-center gap-3">
+          <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${user?.xConnected ? 'bg-emerald-500/10 border border-emerald-500/20' : 'bg-secondary/50 border border-border/30'}`}>
+            {user?.xConnected ? (
+              <Link2 className="w-5 h-5 text-emerald-400" />
+            ) : (
+              <Unplug className="w-5 h-5 text-muted-foreground" />
+            )}
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-medium">X/Twitter</p>
+            <p className="text-xs text-muted-foreground">
+              {user?.xConnected
+                ? `Connected as @${user.xUsername || 'user'}`
+                : 'Not connected'}
+            </p>
+          </div>
+          {user?.xConnected && (
+            <motion.button
+              whileTap={{ scale: 0.95 }}
+              onClick={handleDisconnectTwitter}
+              className="px-3 py-1.5 rounded-lg text-xs text-red-400 border border-red-400/20 hover:bg-red-400/10 transition-colors"
+            >
+              Disconnect
+            </motion.button>
+          )}
+        </div>
+
+        <motion.button
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.5 }}
+          whileTap={{ scale: 0.98 }}
+          onClick={handleLogout}
+          className="w-full py-3 rounded-xl border border-border/30 text-muted-foreground text-sm hover:text-red-400 hover:border-red-400/30 hover:bg-red-400/5 transition-colors flex items-center justify-center gap-2"
+        >
+          <LogOut className="w-4 h-4" />
+          Sign Out
+        </motion.button>
+      </div>
     </div>
   );
 }

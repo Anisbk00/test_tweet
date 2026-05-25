@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
-import { fetchBookmarksFromTwitter } from '@/lib/twitter';
+import { twikitGetBookmarks, transformTwikitPost, twikitLoginWithCookies } from '@/lib/twitter';
 
 export async function POST(request: NextRequest) {
   try {
@@ -10,9 +10,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const userId = session.userId;
+
     // Check if already syncing
     const syncStatus = await db.syncStatus.findUnique({
-      where: { userId: session.userId },
+      where: { userId },
     });
 
     if (syncStatus?.isSyncing) {
@@ -22,105 +24,142 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Get user's Twitter cookies
+    const user = await db.user.findUnique({
+      where: { id: userId },
+      select: { xCookies: true, xConnected: true, xUsername: true },
+    });
+
+    if (!user?.xConnected || !user?.xCookies) {
+      return NextResponse.json(
+        { error: 'Twitter not connected. Please connect your X/Twitter account first.' },
+        { status: 400 }
+      );
+    }
+
+    // Parse cookies
+    let cookies: Record<string, string>;
+    try {
+      cookies = JSON.parse(user.xCookies);
+    } catch {
+      return NextResponse.json(
+        { error: 'Invalid Twitter cookies. Please reconnect.' },
+        { status: 400 }
+      );
+    }
+
     // Mark as syncing
     await db.syncStatus.upsert({
-      where: { userId: session.userId },
-      update: { isSyncing: true },
-      create: {
-        userId: session.userId,
-        isSyncing: true,
-      },
+      where: { userId },
+      update: { isSyncing: true, lastError: null },
+      create: { userId, isSyncing: true },
     });
 
     try {
-      // Fetch bookmarks from twikit-service
-      const result = await fetchBookmarksFromTwitter(
-        session.userId,
-        syncStatus?.lastBookmarkId || undefined
-      );
-
-      let syncedCount = 0;
-      const errors: string[] = [];
-
-      for (const tweet of result.bookmarks) {
-        try {
-          // Upsert bookmark
-          await db.bookmark.upsert({
-            where: { xPostId: tweet.id },
-            update: {
-              content: tweet.text,
-              xAuthorId: tweet.author_id,
-              xAuthorName: tweet.author_name,
-              xAuthorUsername: tweet.author_username,
-              xAuthorAvatar: tweet.author_avatar,
-              mediaUrls: JSON.stringify(tweet.media_urls),
-              mediaTypes: JSON.stringify(tweet.media_types),
-              replyCount: tweet.reply_count,
-              repostCount: tweet.repost_count,
-              likeCount: tweet.like_count,
-              viewCount: tweet.view_count,
-              bookmarkCount: tweet.bookmark_count,
-              postedAt: tweet.created_at ? new Date(tweet.created_at) : null,
-              isBookmarked: true,
-            },
-            create: {
-              userId: session.userId,
-              xPostId: tweet.id,
-              content: tweet.text,
-              xAuthorId: tweet.author_id,
-              xAuthorName: tweet.author_name,
-              xAuthorUsername: tweet.author_username,
-              xAuthorAvatar: tweet.author_avatar,
-              mediaUrls: JSON.stringify(tweet.media_urls),
-              mediaTypes: JSON.stringify(tweet.media_types),
-              replyCount: tweet.reply_count,
-              repostCount: tweet.repost_count,
-              likeCount: tweet.like_count,
-              viewCount: tweet.view_count,
-              bookmarkCount: tweet.bookmark_count,
-              postedAt: tweet.created_at ? new Date(tweet.created_at) : null,
+      // First, try to login to twikit-service with the stored cookies
+      // If the service is down, we'll get a connection error
+      try {
+        await twikitLoginWithCookies(userId, cookies as any, user.xUsername || undefined);
+      } catch (loginErr: any) {
+        // If twikit service is unreachable, return a helpful error
+        if (loginErr.message?.includes('fetch failed') || loginErr.message?.includes('abort') || loginErr.message?.includes('ECONNREFUSED')) {
+          await db.syncStatus.update({
+            where: { userId },
+            data: {
+              isSyncing: false,
+              errorCount: (syncStatus?.errorCount || 0) + 1,
+              lastError: 'Twitter sync service is unavailable. Please try again later.',
             },
           });
-          syncedCount++;
-        } catch (err) {
-          errors.push(
-            `Failed to sync tweet ${tweet.id}: ${err instanceof Error ? err.message : 'Unknown error'}`
+          return NextResponse.json(
+            { error: 'Twitter sync service is currently unavailable. Please ensure the service is running and try again.' },
+            { status: 503 }
           );
         }
+        throw loginErr;
+      }
+
+      let allSynced = 0;
+      let cursor: string | undefined = undefined;
+      let hasMore = true;
+      let pageCount = 0;
+      const maxPages = 10; // Limit to prevent infinite loops
+
+      // Fetch bookmarks page by page from twikit-service
+      while (hasMore && pageCount < maxPages) {
+        const result = await twikitGetBookmarks(userId, cursor, 50);
+
+        for (const post of result.data) {
+          try {
+            const transformed = transformTwikitPost(post);
+            await db.bookmark.upsert({
+              where: { xPostId: transformed.xPostId },
+              update: {
+                content: transformed.content,
+                xAuthorId: transformed.xAuthorId,
+                xAuthorName: transformed.xAuthorName,
+                xAuthorUsername: transformed.xAuthorUsername,
+                xAuthorAvatar: transformed.xAuthorAvatar,
+                mediaUrls: transformed.mediaUrls,
+                mediaTypes: transformed.mediaTypes,
+                replyCount: transformed.replyCount,
+                repostCount: transformed.repostCount,
+                likeCount: transformed.likeCount,
+                viewCount: transformed.viewCount,
+                bookmarkCount: transformed.bookmarkCount,
+                postedAt: transformed.postedAt,
+                isBookmarked: true,
+              },
+              create: {
+                userId,
+                ...transformed,
+              },
+            });
+            allSynced++;
+          } catch (err) {
+            console.error(`Failed to sync post ${post.id}:`, err);
+          }
+        }
+
+        hasMore = result.has_more;
+        cursor = result.cursor || undefined;
+        pageCount++;
+
+        // If no more data, break
+        if (!result.data || result.data.length === 0) break;
       }
 
       // Update sync status
       await db.syncStatus.update({
-        where: { userId: session.userId },
+        where: { userId },
         data: {
           isSyncing: false,
           lastSyncAt: new Date(),
-          lastBookmarkId: result.last_cursor || syncStatus?.lastBookmarkId,
-          syncCount: (syncStatus?.syncCount || 0) + syncedCount,
-          errorCount: errors.length,
-          lastError: errors.length > 0 ? errors[0] : null,
+          lastBookmarkId: cursor || syncStatus?.lastBookmarkId,
+          syncCount: (syncStatus?.syncCount || 0) + allSynced,
+          errorCount: 0,
+          lastError: null,
         },
       });
 
       // Log activity
       await db.activity.create({
         data: {
-          userId: session.userId,
+          userId,
           type: 'sync_complete',
-          metadata: JSON.stringify({ syncedCount, errorCount: errors.length }),
+          metadata: JSON.stringify({ syncedCount: allSynced, pages: pageCount }),
         },
       });
 
       return NextResponse.json({
-        syncedCount,
-        errorCount: errors.length,
-        errors: errors.length > 0 ? errors : undefined,
-        hasMore: result.has_more,
+        syncedCount: allSynced,
+        pages: pageCount,
+        hasMore,
       });
     } catch (syncError) {
       // Mark sync as failed
       await db.syncStatus.update({
-        where: { userId: session.userId },
+        where: { userId },
         data: {
           isSyncing: false,
           errorCount: (syncStatus?.errorCount || 0) + 1,
@@ -136,7 +175,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Sync bookmarks error:', error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: error instanceof Error ? error.message : 'Internal server error' },
       { status: 500 }
     );
   }

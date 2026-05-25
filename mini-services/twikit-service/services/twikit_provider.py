@@ -166,11 +166,15 @@ class TwikitProvider:
 
     def _set_client_cookies(self, user_id: str, cookies: dict) -> Client:
         """Set cookies on an existing or new client."""
-        client = self._get_client(user_id, cookies)
-        if user_id in self._clients:
-            # Update cookies on existing client
-            client.set_cookies(cookies)
-        return client
+        try:
+            client = self._get_client(user_id, cookies)
+            if user_id in self._clients:
+                # Update cookies on existing client
+                client.set_cookies(cookies)
+            return client
+        except Exception as e:
+            logger.error(f"Failed to set cookies for user {user_id}: {e}")
+            raise ValueError(f"Invalid cookies: {str(e)}") from e
 
     async def _with_retry(self, func, *args, max_retries=None, **kwargs):
         """Execute a function with retry logic for rate limiting."""
