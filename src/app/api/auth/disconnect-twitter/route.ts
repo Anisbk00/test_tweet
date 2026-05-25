@@ -24,9 +24,12 @@ export async function POST(request: NextRequest) {
         xCookies: null,
         xConnected: false,
         xUsername: null,
-        xAccessToken: null,
-        xRefreshToken: null,
         xUserId: null,
+        xAccessToken: null,
+        xOAuth2AccessToken: null,
+        xOAuth2RefreshToken: null,
+        xOAuth2ExpiresAt: null,
+        xAuthMethod: 'none',
       },
     });
 

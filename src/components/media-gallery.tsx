@@ -4,7 +4,7 @@ import { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { useAppStore } from '@/lib/store';
 import { parseJSON, formatCount } from '@/lib/utils';
-import { Image, Film, FileImage, Grid3X3, Play } from 'lucide-react';
+import { Image as ImageIcon, Film, FileImage, Grid3X3, Play } from 'lucide-react';
 
 type MediaFilter = 'all' | 'photo' | 'video' | 'gif';
 
@@ -92,7 +92,7 @@ export function MediaGallery() {
       {/* Media Grid - Instagram style */}
       {mediaItems.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 text-center">
-          <Image className="w-12 h-12 text-muted-foreground/30 mb-3" />
+          <ImageIcon className="w-12 h-12 text-muted-foreground/30 mb-3" />
           <h3 className="text-lg font-semibold mb-1">No media yet</h3>
           <p className="text-sm text-muted-foreground">Bookmarks with images and videos will appear here.</p>
         </div>

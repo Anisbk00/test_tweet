@@ -1,4 +1,4 @@
-"""Configuration module for the Twikit service."""
+"""Configuration module for the Twitter data service."""
 
 import os
 from dotenv import load_dotenv
@@ -14,10 +14,20 @@ class Settings:
     PORT: int = int(os.getenv("PORT", "3031"))
     DEBUG: bool = os.getenv("DEBUG", "false").lower() == "true"
 
-    # Twitter Auth Cookies
+    # X API v2 Credentials (Primary Method)
+    X_API_BEARER_TOKEN: str = os.getenv("X_API_BEARER_TOKEN", "")
+    X_API_KEY: str = os.getenv("X_API_KEY", "")
+    X_API_KEY_SECRET: str = os.getenv("X_API_KEY_SECRET", "")
+    X_ACCESS_TOKEN: str = os.getenv("X_ACCESS_TOKEN", "")
+    X_ACCESS_TOKEN_SECRET: str = os.getenv("X_ACCESS_TOKEN_SECRET", "")
+
+    # OAuth 2.0
+    X_CLIENT_ID: str = os.getenv("X_CLIENT_ID", "")
+    X_CLIENT_SECRET: str = os.getenv("X_CLIENT_SECRET", "")
+
+    # Twitter Auth Cookies (Twikit fallback)
     TWITTER_AUTH_TOKEN: str = os.getenv("TWITTER_AUTH_TOKEN", "")
     TWITTER_CT0: str = os.getenv("TWITTER_CT0", "")
-    TWITTER_GUEST_ID: str = os.getenv("TWITTER_GUEST_ID", "")
 
     # Rate Limiting
     RATE_LIMIT_REQUESTS: int = int(os.getenv("RATE_LIMIT_REQUESTS", "60"))
@@ -39,6 +49,30 @@ class Settings:
     # Twikit
     TWIKIT_API_DELAY: float = float(os.getenv("TWIKIT_API_DELAY", "1.0"))
     TWIKIT_MAX_RETRIES: int = int(os.getenv("TWIKIT_MAX_RETRIES", "3"))
+
+    # X API
+    X_API_BASE_URL: str = "https://api.twitter.com/2"
+    X_API_DELAY: float = float(os.getenv("X_API_DELAY", "0.5"))
+    X_API_MAX_RETRIES: int = int(os.getenv("X_API_MAX_RETRIES", "3"))
+
+    @property
+    def has_oauth1_credentials(self) -> bool:
+        """Check if OAuth 1.0a credentials are configured."""
+        return bool(
+            self.X_API_KEY
+            and self.X_ACCESS_TOKEN
+            and self.X_ACCESS_TOKEN_SECRET
+        )
+
+    @property
+    def has_bearer_token(self) -> bool:
+        """Check if Bearer Token is configured."""
+        return bool(self.X_API_BEARER_TOKEN)
+
+    @property
+    def has_oauth2_credentials(self) -> bool:
+        """Check if OAuth 2.0 credentials are configured."""
+        return bool(self.X_CLIENT_ID and self.X_CLIENT_SECRET)
 
 
 settings = Settings()

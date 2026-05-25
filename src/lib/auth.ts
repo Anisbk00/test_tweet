@@ -129,6 +129,8 @@ export async function getCurrentUser(request: NextRequest) {
       xUserId: true,
       xUsername: true,
       xConnected: true,
+      xAuthMethod: true,
+      xOAuth2ExpiresAt: true,
       createdAt: true,
       updatedAt: true,
     },

@@ -2,7 +2,7 @@
 
 import { motion } from 'framer-motion';
 import { useAppStore, type Page } from '@/lib/store';
-import { Bookmark, Home, FolderOpen, Image, Search, Compass, User } from 'lucide-react';
+import { Bookmark, Home, FolderOpen, Image, Search, Compass, User, Zap, Cookie, WifiOff } from 'lucide-react';
 
 const navItems: { page: Page; icon: React.ComponentType<any>; label: string }[] = [
   { page: 'home', icon: Home, label: 'Home' },
@@ -13,10 +13,47 @@ const navItems: { page: Page; icon: React.ComponentType<any>; label: string }[] 
   { page: 'profile', icon: User, label: 'Profile' },
 ];
 
+function ConnectionBadge({ xConnected, xAuthMethod }: { xConnected: boolean; xAuthMethod: string | null }) {
+  if (xConnected && xAuthMethod === 'x_api') {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/25">
+        <Zap className="w-2.5 h-2.5" />
+        X API
+      </span>
+    );
+  }
+
+  if (xConnected && xAuthMethod === 'twikit') {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-amber-500/15 text-amber-400 border border-amber-500/25">
+        <Cookie className="w-2.5 h-2.5" />
+        Twikit
+      </span>
+    );
+  }
+
+  if (xConnected) {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/25">
+        <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+        Connected
+      </span>
+    );
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-red-500/15 text-red-400 border border-red-500/25">
+      <WifiOff className="w-2.5 h-2.5" />
+      Disconnected
+    </span>
+  );
+}
+
 export function Header() {
   const { currentPage, setCurrentPage, user } = useAppStore();
 
   const isConnected = user?.xConnected || false;
+  const xAuthMethod = user?.xAuthMethod || null;
 
   return (
     <header className="sticky top-0 z-50 glass border-b border-border/50 safe-top">
@@ -70,10 +107,12 @@ export function Header() {
 
         {/* Connection status */}
         <div className="flex items-center gap-2">
-          <div className={`w-2 h-2 rounded-full shadow-sm ${isConnected ? 'bg-emerald-400 shadow-emerald-400/50' : 'bg-muted-foreground/50'}`} />
-          <span className="text-xs text-muted-foreground hidden sm:block">
-            {isConnected ? `@${user?.xUsername || 'connected'}` : 'Not connected'}
-          </span>
+          <ConnectionBadge xConnected={isConnected} xAuthMethod={xAuthMethod} />
+          {isConnected && (
+            <span className="text-xs text-muted-foreground hidden sm:block">
+              @{user?.xUsername || 'connected'}
+            </span>
+          )}
         </div>
       </div>
     </header>

@@ -1,8 +1,7 @@
-"""FastAPI application for the Twikit service - X/Twitter data retrieval."""
+"""FastAPI application for the Twitter data service - X API v2 primary + Twikit fallback."""
 
 import logging
 import time
-import os
 from collections import defaultdict
 from typing import Optional
 
@@ -24,9 +23,9 @@ logger = logging.getLogger(__name__)
 
 # Create FastAPI app
 app = FastAPI(
-    title="Twikit Service",
-    description="X/Twitter data retrieval service using Twikit",
-    version="1.0.0",
+    title="Twitter Data Service",
+    description="X/Twitter data retrieval service using X API v2 (primary) + Twikit (fallback)",
+    version="2.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
 )
@@ -177,14 +176,22 @@ app.include_router(network_router)
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint."""
+    """Health check endpoint with provider status."""
     cache = get_cache()
     queue = get_queue()
 
     return {
         "status": "healthy",
-        "service": "twikit-service",
-        "version": "1.0.0",
+        "service": "twitter-data-service",
+        "version": "2.0.0",
+        "providers": {
+            "x_api": {
+                "bearer_token": settings.has_bearer_token,
+                "oauth1": settings.has_oauth1_credentials,
+                "oauth2": settings.has_oauth2_credentials,
+            },
+            "twikit": True,  # Always available as fallback
+        },
         "cache_stats": cache.stats(),
         "queue_running": queue._running,
     }
@@ -194,11 +201,19 @@ async def health_check():
 async def root():
     """Root endpoint - service info."""
     return {
-        "service": "twikit-service",
-        "version": "1.0.0",
-        "description": "X/Twitter data retrieval service using Twikit",
+        "service": "twitter-data-service",
+        "version": "2.0.0",
+        "description": "X/Twitter data retrieval using X API v2 (primary) + Twikit (fallback)",
         "docs": "/docs",
         "health": "/health",
+        "providers": {
+            "x_api": {
+                "bearer_token": settings.has_bearer_token,
+                "oauth1": settings.has_oauth1_credentials,
+                "oauth2": settings.has_oauth2_credentials,
+            },
+            "twikit": True,
+        },
     }
 
 
@@ -207,7 +222,12 @@ async def root():
 @app.on_event("startup")
 async def startup_event():
     """Run on application startup."""
-    logger.info("Twikit service starting up...")
+    logger.info("Twitter data service starting up...")
+    logger.info(f"X API Bearer Token: {'configured' if settings.has_bearer_token else 'not configured'}")
+    logger.info(f"X API OAuth 1.0a: {'configured' if settings.has_oauth1_credentials else 'not configured'}")
+    logger.info(f"X API OAuth 2.0: {'configured' if settings.has_oauth2_credentials else 'not configured'}")
+    logger.info(f"Twikit: always available as fallback")
+
     queue = get_queue()
     queue.start()
     logger.info("Background queue worker started")
@@ -216,7 +236,7 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     """Run on application shutdown."""
-    logger.info("Twikit service shutting down...")
+    logger.info("Twitter data service shutting down...")
     queue = get_queue()
     queue.stop()
     logger.info("Background queue worker stopped")

@@ -11,6 +11,7 @@ interface User {
   avatarUrl: string | null;
   xUsername: string | null;
   xConnected: boolean;
+  xAuthMethod: string | null; // 'x_api' | 'twikit' | 'auto' | 'none'
 }
 
 interface Bookmark {

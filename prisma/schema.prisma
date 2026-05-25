@@ -15,10 +15,15 @@ model User {
   avatarUrl     String?
   xUserId       String?   @unique
   xUsername     String?
-  xAccessToken  String?   // encrypted
-  xRefreshToken String?   // encrypted
+  // X API v2 OAuth 2.0 tokens (encrypted at rest)
+  xOAuth2AccessToken  String?
+  xOAuth2RefreshToken String?
+  xOAuth2ExpiresAt    DateTime?
+  // Twikit cookies (encrypted at rest)
+  xAccessToken  String?   // auth_token for Twikit
   xCookies      String?   // JSON: encrypted Twitter cookies (auth_token, ct0, etc.)
-  xConnected    Boolean   @default(false) // whether Twitter is connected
+  xConnected    Boolean   @default(false)
+  xAuthMethod   String    @default("none") // 'x_api' | 'twikit' | 'auto' | 'none'
   passwordHash  String?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -75,6 +80,7 @@ model Bookmark {
   viewCount       Int      @default(0)
   bookmarkCount   Int      @default(0)
   isBookmarked    Boolean  @default(true)
+  source          String   @default("x_api") // 'x_api' | 'twikit'
   postedAt        DateTime?
   savedAt         DateTime @default(now())
   createdAt       DateTime @default(now())
@@ -84,7 +90,6 @@ model Bookmark {
   collections Collection[]
   tags        Tag[]
   aiSummary   String?
-  embeddings  String?      // JSON stored vector for semantic search
 }
 
 model Tag {
@@ -103,7 +108,7 @@ model Tag {
 model Activity {
   id        String   @id @default(cuid())
   userId    String
-  type      String   // bookmark_save, collection_create, search, etc.
+  type      String   // bookmark_save, collection_create, sync_complete, twitter_connect, etc.
   metadata  String   @default("{}") // JSON
   createdAt DateTime @default(now())
 
@@ -119,6 +124,7 @@ model SyncStatus {
   syncCount      Int      @default(0)
   errorCount     Int      @default(0)
   lastError      String?
+  provider       String   @default("auto") // 'x_api' | 'twikit' | 'auto'
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 }

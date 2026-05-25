@@ -1,11 +1,30 @@
 'use client';
 
-import { useState } from 'react';
-import { motion } from 'framer-motion';
+import { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useAppStore } from '@/lib/store';
 import * as api from '@/lib/api';
-import { Loader2, Key, Shield, ExternalLink, CheckCircle2, AlertCircle } from 'lucide-react';
+import {
+  Loader2,
+  Key,
+  Shield,
+  ExternalLink,
+  CheckCircle2,
+  AlertCircle,
+  ChevronDown,
+  ChevronUp,
+  Cookie,
+  Zap,
+  Info,
+} from 'lucide-react';
 import { toast } from 'sonner';
+
+interface XConfig {
+  configured: boolean;
+  method: string | null;
+  hasOAuth2: boolean;
+  hasTwikit: boolean;
+}
 
 export function TwitterConnect() {
   const { user, setAuth, token } = useAppStore();
@@ -15,8 +34,34 @@ export function TwitterConnect() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [error, setError] = useState('');
   const [step, setStep] = useState<'input' | 'validating' | 'syncing' | 'done'>('input');
+  const [showCookieFallback, setShowCookieFallback] = useState(false);
+  const [xConfig, setXConfig] = useState<XConfig | null>(null);
+  const [isLoadingConfig, setIsLoadingConfig] = useState(true);
 
-  const handleConnect = async (e: React.FormEvent) => {
+  useEffect(() => {
+    async function loadConfig() {
+      try {
+        const config = await api.auth.getXConfig();
+        setXConfig(config);
+      } catch {
+        setXConfig({ configured: false, method: null, hasOAuth2: false, hasTwikit: true });
+      }
+      setIsLoadingConfig(false);
+    }
+    loadConfig();
+  }, []);
+
+  const handleOAuth2Connect = async () => {
+    setError('');
+    try {
+      api.auth.connectXOAuth2();
+      // The page will redirect to X's OAuth page, so no further action needed
+    } catch (err: any) {
+      setError(err.message || 'Failed to initiate OAuth 2.0 flow');
+    }
+  };
+
+  const handleCookieConnect = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setIsLoading(true);
@@ -32,7 +77,7 @@ export function TwitterConnect() {
           setAuth(token, meResult.user);
         }
 
-        toast.success(`Connected as @${result.username || 'user'}`);
+        toast.success(`Connected as @${meResult?.user?.xUsername || 'user'}`);
         setStep('syncing');
 
         // Trigger initial sync
@@ -54,6 +99,9 @@ export function TwitterConnect() {
     setIsLoading(false);
   };
 
+  const oauth2Available = xConfig?.hasOAuth2 ?? false;
+  const twikitAvailable = xConfig?.hasTwikit ?? true;
+
   return (
     <div className="max-w-lg mx-auto px-4 py-12">
       <motion.div
@@ -62,11 +110,11 @@ export function TwitterConnect() {
         className="text-center mb-8"
       >
         <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-amber-400/20 to-orange-500/20 border border-amber-500/20 flex items-center justify-center">
-          <Key className="w-8 h-8 text-amber-400" />
+          <Zap className="w-8 h-8 text-amber-400" />
         </div>
         <h1 className="text-2xl font-bold mb-2">Connect X/Twitter</h1>
         <p className="text-sm text-muted-foreground max-w-sm mx-auto">
-          To fetch your bookmarks and saved content, we need your Twitter authentication cookies.
+          Link your X account to sync and organize your bookmarks.
         </p>
       </motion.div>
 
@@ -86,88 +134,208 @@ export function TwitterConnect() {
           </p>
         </motion.div>
       ) : (
-        <motion.form
+        <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
-          onSubmit={handleConnect}
           className="space-y-4"
         >
-          {/* Instructions */}
-          <div className="p-4 rounded-2xl bg-card/60 border border-border/20">
-            <h3 className="font-semibold text-sm mb-2 flex items-center gap-2">
-              <Shield className="w-4 h-4 text-amber-400" />
-              How to get your cookies
-            </h3>
-            <ol className="text-xs text-muted-foreground space-y-1.5 list-decimal list-inside">
-              <li>Open <a href="https://x.com" target="_blank" rel="noopener noreferrer" className="text-amber-400 underline inline-flex items-center gap-0.5">x.com<ExternalLink className="w-2.5 h-2.5" /></a> and log in</li>
-              <li>Open browser DevTools (F12 or Cmd+Option+I)</li>
-              <li>Go to Application → Cookies → https://x.com</li>
-              <li>Find and copy the <code className="px-1 py-0.5 rounded bg-secondary/50 text-amber-400 font-mono">auth_token</code> value</li>
-              <li>Find and copy the <code className="px-1 py-0.5 rounded bg-secondary/50 text-amber-400 font-mono">ct0</code> value</li>
-            </ol>
-            <p className="text-[10px] text-muted-foreground/60 mt-3">
-              Your cookies are stored locally and encrypted. They are never shared with third parties.
-            </p>
-          </div>
-
-          {/* auth_token input */}
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block font-medium">auth_token</label>
-            <input
-              type="password"
-              placeholder="Paste your auth_token cookie value"
-              value={authToken}
-              onChange={(e) => setAuthToken(e.target.value)}
-              className="w-full px-4 py-3 rounded-xl bg-secondary/50 border border-border/50 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500/50 transition-all font-mono text-sm"
-              required
-            />
-          </div>
-
-          {/* ct0 input */}
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block font-medium">ct0</label>
-            <input
-              type="password"
-              placeholder="Paste your ct0 cookie value"
-              value={ct0}
-              onChange={(e) => setCt0(e.target.value)}
-              className="w-full px-4 py-3 rounded-xl bg-secondary/50 border border-border/50 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500/50 transition-all font-mono text-sm"
-              required
-            />
-          </div>
-
-          {error && (
+          {/* Connection method status */}
+          {user?.xConnected && user?.xAuthMethod && (
             <motion.div
-              initial={{ opacity: 0, y: -5 }}
+              initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
-              className="flex items-center gap-2 p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-sm text-red-400"
+              className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center gap-3"
             >
-              <AlertCircle className="w-4 h-4 flex-shrink-0" />
-              {error}
+              <CheckCircle2 className="w-5 h-5 text-emerald-400 flex-shrink-0" />
+              <div className="flex-1">
+                <p className="text-sm font-medium text-emerald-400">
+                  Already connected via {user.xAuthMethod === 'x_api' ? 'X API (OAuth 2.0)' : 'Twikit (Cookies)'}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  @{user.xUsername || 'user'}
+                </p>
+              </div>
             </motion.div>
           )}
 
-          <motion.button
-            type="submit"
-            disabled={isLoading || !authToken || !ct0}
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            className="w-full py-3.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-white font-semibold shadow-lg shadow-amber-500/25 hover:shadow-amber-500/40 transition-shadow disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-          >
-            {isLoading ? (
-              <>
-                <Loader2 className="w-5 h-5 animate-spin" />
-                {step === 'validating' ? 'Validating...' : 'Syncing bookmarks...'}
-              </>
-            ) : (
-              <>
-                <Key className="w-4 h-4" />
-                Connect & Sync
-              </>
-            )}
-          </motion.button>
-        </motion.form>
+          {/* Primary method: OAuth 2.0 */}
+          {oauth2Available && (
+            <div className="space-y-3">
+              <motion.button
+                onClick={handleOAuth2Connect}
+                disabled={isLoading}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                className="w-full py-4 rounded-xl bg-gradient-to-r from-neutral-900 to-neutral-800 text-white font-semibold shadow-lg shadow-neutral-900/25 hover:shadow-neutral-900/40 transition-shadow disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3 border border-neutral-700/50"
+              >
+                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+                </svg>
+                Sign in with X
+              </motion.button>
+
+              <div className="flex items-center gap-2 px-1">
+                <Shield className="w-3.5 h-3.5 text-emerald-400/60" />
+                <p className="text-[11px] text-muted-foreground/60">
+                  Secure OAuth 2.0 PKCE flow — your credentials are never shared
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Divider with "or" */}
+          <div className="relative flex items-center gap-4 py-1">
+            <div className="flex-1 h-px bg-border/30" />
+            <span className="text-xs text-muted-foreground/50 font-medium">or</span>
+            <div className="flex-1 h-px bg-border/30" />
+          </div>
+
+          {/* Fallback method: Cookie-based (Twikit) */}
+          {!showCookieFallback ? (
+            <motion.button
+              onClick={() => setShowCookieFallback(true)}
+              whileHover={{ scale: 1.01 }}
+              whileTap={{ scale: 0.99 }}
+              className="w-full p-4 rounded-xl bg-secondary/30 border border-border/30 hover:bg-secondary/50 transition-colors flex items-center gap-3 text-left"
+            >
+              <Cookie className="w-5 h-5 text-amber-400/60 flex-shrink-0" />
+              <div className="flex-1">
+                <p className="text-sm font-medium">Alternative: Connect with Twitter Cookies</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Use this if OAuth 2.0 is not available
+                </p>
+              </div>
+              <ChevronDown className="w-4 h-4 text-muted-foreground/50" />
+            </motion.button>
+          ) : (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="rounded-xl bg-secondary/20 border border-border/30 overflow-hidden"
+            >
+              <button
+                onClick={() => setShowCookieFallback(false)}
+                className="w-full p-3 flex items-center gap-2 text-left hover:bg-secondary/30 transition-colors"
+              >
+                <Cookie className="w-4 h-4 text-amber-400/60" />
+                <span className="text-xs font-medium text-muted-foreground flex-1">
+                  Connect with Twitter Cookies (Twikit)
+                </span>
+                <ChevronUp className="w-4 h-4 text-muted-foreground/50" />
+              </button>
+
+              <form onSubmit={handleCookieConnect} className="px-4 pb-4 space-y-3">
+                {/* Info note */}
+                <div className="p-3 rounded-lg bg-amber-500/5 border border-amber-500/10 flex items-start gap-2">
+                  <Info className="w-3.5 h-3.5 text-amber-400/60 mt-0.5 flex-shrink-0" />
+                  <p className="text-[11px] text-muted-foreground/70">
+                    This method uses your Twitter cookies to authenticate via Twikit. It&apos;s a fallback when OAuth 2.0 is not available.
+                  </p>
+                </div>
+
+                {/* Instructions */}
+                <div className="p-3 rounded-lg bg-card/40 border border-border/10">
+                  <h3 className="font-semibold text-xs mb-1.5 flex items-center gap-1.5">
+                    <Shield className="w-3.5 h-3.5 text-amber-400/80" />
+                    How to get your cookies
+                  </h3>
+                  <ol className="text-[10px] text-muted-foreground/70 space-y-1 list-decimal list-inside">
+                    <li>Open <a href="https://x.com" target="_blank" rel="noopener noreferrer" className="text-amber-400/80 underline inline-flex items-center gap-0.5">x.com<ExternalLink className="w-2 h-2" /></a> and log in</li>
+                    <li>Open browser DevTools (F12 or Cmd+Option+I)</li>
+                    <li>Go to Application &rarr; Cookies &rarr; https://x.com</li>
+                    <li>Find and copy the <code className="px-1 py-0.5 rounded bg-secondary/50 text-amber-400/80 font-mono">auth_token</code> value</li>
+                    <li>Find and copy the <code className="px-1 py-0.5 rounded bg-secondary/50 text-amber-400/80 font-mono">ct0</code> value</li>
+                  </ol>
+                  <p className="text-[9px] text-muted-foreground/40 mt-2">
+                    Your cookies are stored locally and encrypted. They are never shared with third parties.
+                  </p>
+                </div>
+
+                {/* auth_token input */}
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block font-medium">auth_token</label>
+                  <input
+                    type="password"
+                    placeholder="Paste your auth_token cookie value"
+                    value={authToken}
+                    onChange={(e) => setAuthToken(e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-lg bg-secondary/50 border border-border/30 text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500/30 transition-all font-mono text-xs"
+                    required
+                  />
+                </div>
+
+                {/* ct0 input */}
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block font-medium">ct0</label>
+                  <input
+                    type="password"
+                    placeholder="Paste your ct0 cookie value"
+                    value={ct0}
+                    onChange={(e) => setCt0(e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-lg bg-secondary/50 border border-border/30 text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500/30 transition-all font-mono text-xs"
+                    required
+                  />
+                </div>
+
+                {error && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="flex items-center gap-2 p-2.5 rounded-lg bg-red-500/10 border border-red-500/20 text-xs text-red-400"
+                  >
+                    <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                    {error}
+                  </motion.div>
+                )}
+
+                <motion.button
+                  type="submit"
+                  disabled={isLoading || !authToken || !ct0}
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  className="w-full py-3 rounded-lg bg-gradient-to-r from-amber-500/80 to-orange-500/80 text-white font-semibold shadow-lg shadow-amber-500/15 hover:shadow-amber-500/25 transition-shadow disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-sm"
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      {step === 'validating' ? 'Validating...' : 'Syncing bookmarks...'}
+                    </>
+                  ) : (
+                    <>
+                      <Key className="w-4 h-4" />
+                      Connect & Sync
+                    </>
+                  )}
+                </motion.button>
+              </form>
+            </motion.div>
+          )}
+
+          {/* Loading config state */}
+          {isLoadingConfig && (
+            <div className="flex items-center justify-center gap-2 py-2">
+              <Loader2 className="w-4 h-4 animate-spin text-muted-foreground/50" />
+              <span className="text-xs text-muted-foreground/50">Checking available connection methods...</span>
+            </div>
+          )}
+
+          {/* Config status info */}
+          {!isLoadingConfig && xConfig && (
+            <div className="flex items-center gap-2 px-1">
+              <div className={`w-1.5 h-1.5 rounded-full ${xConfig.hasOAuth2 ? 'bg-emerald-400' : 'bg-muted-foreground/30'}`} />
+              <span className="text-[10px] text-muted-foreground/40">
+                OAuth 2.0 {xConfig.hasOAuth2 ? 'available' : 'unavailable'}
+              </span>
+              <span className="text-muted-foreground/20">·</span>
+              <div className={`w-1.5 h-1.5 rounded-full ${xConfig.hasTwikit ? 'bg-amber-400' : 'bg-muted-foreground/30'}`} />
+              <span className="text-[10px] text-muted-foreground/40">
+                Twikit {xConfig.hasTwikit ? 'available' : 'unavailable'}
+              </span>
+            </div>
+          )}
+        </motion.div>
       )}
     </div>
   );

@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAppStore } from '@/lib/store';
 import * as api from '@/lib/api';
 import { formatCount, formatDate, parseJSON, getInitials, getAvatarColor } from '@/lib/utils';
-import { Search, X, Filter, SlidersHorizontal, Calendar, User, Tag, Image, ArrowUp } from 'lucide-react';
+import { Search, X, Filter, SlidersHorizontal, Calendar, User, Tag, Image as ImageIcon, ArrowUp } from 'lucide-react';
 
 type SearchFilter = {
   mediaType: string;
@@ -123,7 +123,7 @@ export function SearchView() {
               {/* Media type filter */}
               <div>
                 <label className="text-xs text-muted-foreground mb-1 block flex items-center gap-1">
-                  <Image className="w-3 h-3" /> Media Type
+                  <ImageIcon className="w-3 h-3" /> Media Type
                 </label>
                 <select
                   value={filters.mediaType}

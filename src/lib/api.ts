@@ -41,7 +41,7 @@ export const auth = {
   me: () => apiFetch<any>('/auth/me'),
   logout: () => apiFetch<void>('/auth/logout', { method: 'POST' }),
   connectTwitter: (authToken: string, ct0: string) =>
-    apiFetch<{ success: boolean }>('/auth/connect-twitter', {
+    apiFetch<{ success: boolean; username?: string }>('/auth/connect-twitter', {
       method: 'POST',
       body: JSON.stringify({ authToken, ct0 }),
     }),
@@ -49,6 +49,18 @@ export const auth = {
     apiFetch<{ success: boolean }>('/auth/disconnect-twitter', {
       method: 'POST',
     }),
+  connectXOAuth2: () => {
+    // Initiate OAuth 2.0 PKCE flow by redirecting to the authorize endpoint
+    // The backend will redirect to X's OAuth page
+    const token = useAppStore.getState().token;
+    window.location.href = `/api/auth/x/authorize${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+  },
+  getXConfig: () => apiFetch<{
+    configured: boolean;
+    method: string | null;
+    hasOAuth2: boolean;
+    hasTwikit: boolean;
+  }>('/auth/x/config'),
 };
 
 // Bookmarks
@@ -142,5 +154,11 @@ export const discovery = {
 // Sync
 export const sync = {
   status: () => apiFetch<any>('/sync/status'),
-  trigger: () => apiFetch<any>('/sync/trigger', { method: 'POST' }),
+  trigger: () => apiFetch<{
+    success: boolean;
+    syncedCount: number;
+    pages: number;
+    hasMore: boolean;
+    provider?: string;
+  }>('/sync/trigger', { method: 'POST' }),
 };

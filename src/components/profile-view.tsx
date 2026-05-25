@@ -5,13 +5,26 @@ import { motion } from 'framer-motion';
 import { useAppStore } from '@/lib/store';
 import * as api from '@/lib/api';
 import { formatCount, getInitials, getAvatarColor } from '@/lib/utils';
-import { User, Bookmark, FolderOpen, Tag, TrendingUp, Calendar, LogOut, RefreshCw, BarChart3, Hash, Star, Unplug, Link2 } from 'lucide-react';
+import { Bookmark, FolderOpen, Tag, TrendingUp, Calendar, LogOut, RefreshCw, BarChart3, Hash, Star, Unplug, Link2, Zap, Cookie, Activity } from 'lucide-react';
 import { toast } from 'sonner';
+
+interface ActivityHeatmapPoint {
+  date: string;
+  count: number;
+}
+
+interface ActivityData {
+  heatmap: ActivityHeatmapPoint[];
+  activityByType: Record<string, number>;
+  currentStreak: number;
+  longestStreak: number;
+  totalActivities: number;
+}
 
 export function ProfileView() {
   const { user, bookmarks, collections, tags, logout } = useAppStore();
   const [analytics, setAnalytics] = useState<any>(null);
-  const [activityData, setActivityData] = useState<any>(null);
+  const [activityData, setActivityData] = useState<ActivityData | null>(null);
   const [creators, setCreators] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -66,21 +79,48 @@ export function ProfileView() {
     }
   }, []);
 
-  // Activity heatmap - last 12 weeks
+  // Activity heatmap - last 12 weeks using REAL data from the API
   const heatmapData = (() => {
-    const data: { date: string; count: number }[] = [];
+    const data: ActivityHeatmapPoint[] = [];
     const today = new Date();
+    const heatmapMap = new Map<string, number>();
+
+    // Build lookup from real API data
+    if (activityData?.heatmap) {
+      for (const point of activityData.heatmap) {
+        heatmapMap.set(point.date, point.count);
+      }
+    }
+
     for (let i = 83; i >= 0; i--) {
       const date = new Date(today);
       date.setDate(date.getDate() - i);
       const dateStr = date.toISOString().split('T')[0];
-      const count = Math.floor(Math.random() * 8); // Use activity data when available
+      const count = heatmapMap.get(dateStr) || 0;
       data.push({ date: dateStr, count });
     }
     return data;
   })();
 
+  const hasActivity = heatmapData.some((d) => d.count > 0);
   const maxCount = Math.max(...heatmapData.map((d) => d.count), 1);
+
+  // Auth method label
+  const getAuthMethodLabel = () => {
+    if (!user?.xConnected) return null;
+    switch (user.xAuthMethod) {
+      case 'x_api':
+        return { label: 'X API (OAuth 2.0)', icon: Zap, color: 'text-emerald-400', bgColor: 'bg-emerald-500/10 border-emerald-500/20' };
+      case 'twikit':
+        return { label: 'Twikit (Cookies)', icon: Cookie, color: 'text-amber-400', bgColor: 'bg-amber-500/10 border-amber-500/20' };
+      case 'auto':
+        return { label: 'Auto', icon: Activity, color: 'text-blue-400', bgColor: 'bg-blue-500/10 border-blue-500/20' };
+      default:
+        return { label: 'Connected', icon: Link2, color: 'text-muted-foreground', bgColor: 'bg-secondary/50 border-border/30' };
+    }
+  };
+
+  const authMethod = getAuthMethodLabel();
 
   return (
     <div className="max-w-4xl mx-auto p-4">
@@ -145,41 +185,74 @@ export function ProfileView() {
           <h2 className="font-semibold">Activity</h2>
           <span className="text-xs text-muted-foreground ml-auto">Last 12 weeks</span>
         </div>
-        <div className="flex gap-[3px] flex-wrap">
-          {heatmapData.map((day, i) => (
-            <div
-              key={i}
-              className="w-3 h-3 rounded-[2px] transition-colors"
-              style={{
-                backgroundColor: day.count === 0
-                  ? 'oklch(0.2 0.005 280)'
-                  : day.count <= maxCount * 0.25
-                  ? 'oklch(0.4 0.1 50)'
-                  : day.count <= maxCount * 0.5
-                  ? 'oklch(0.55 0.15 50)'
-                  : day.count <= maxCount * 0.75
-                  ? 'oklch(0.65 0.18 50)'
-                  : 'oklch(0.75 0.2 50)',
-              }}
-              title={`${day.date}: ${day.count} activities`}
-            />
-          ))}
-        </div>
-        <div className="flex items-center gap-1 mt-2 text-[10px] text-muted-foreground">
-          <span>Less</span>
-          {[0, 0.25, 0.5, 0.75, 1].map((level) => (
-            <div
-              key={level}
-              className="w-3 h-3 rounded-[2px]"
-              style={{
-                backgroundColor: level === 0
-                  ? 'oklch(0.2 0.005 280)'
-                  : `oklch(${0.4 + level * 0.35} ${0.1 + level * 0.1} 50)`,
-              }}
-            />
-          ))}
-          <span>More</span>
-        </div>
+        {hasActivity ? (
+          <>
+            <div className="flex gap-[3px] flex-wrap">
+              {heatmapData.map((day, i) => (
+                <div
+                  key={i}
+                  className="w-3 h-3 rounded-[2px] transition-colors"
+                  style={{
+                    backgroundColor: day.count === 0
+                      ? 'oklch(0.2 0.005 280)'
+                      : day.count <= maxCount * 0.25
+                      ? 'oklch(0.4 0.1 50)'
+                      : day.count <= maxCount * 0.5
+                      ? 'oklch(0.55 0.15 50)'
+                      : day.count <= maxCount * 0.75
+                      ? 'oklch(0.65 0.18 50)'
+                      : 'oklch(0.75 0.2 50)',
+                  }}
+                  title={`${day.date}: ${day.count} activities`}
+                />
+              ))}
+            </div>
+            <div className="flex items-center gap-1 mt-2 text-[10px] text-muted-foreground">
+              <span>Less</span>
+              {[0, 0.25, 0.5, 0.75, 1].map((level) => (
+                <div
+                  key={level}
+                  className="w-3 h-3 rounded-[2px]"
+                  style={{
+                    backgroundColor: level === 0
+                      ? 'oklch(0.2 0.005 280)'
+                      : `oklch(${0.4 + level * 0.35} ${0.1 + level * 0.1} 50)`,
+                  }}
+                />
+              ))}
+              <span>More</span>
+            </div>
+            {/* Streak info */}
+            {activityData && (activityData.currentStreak > 0 || activityData.longestStreak > 0) && (
+              <div className="flex gap-4 mt-3 pt-3 border-t border-border/10">
+                <div className="flex items-center gap-1.5">
+                  <TrendingUp className="w-3 h-3 text-amber-400/60" />
+                  <span className="text-[10px] text-muted-foreground">
+                    Current streak: <span className="text-foreground font-medium">{activityData.currentStreak}d</span>
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Activity className="w-3 h-3 text-amber-400/60" />
+                  <span className="text-[10px] text-muted-foreground">
+                    Longest: <span className="text-foreground font-medium">{activityData.longestStreak}d</span>
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Bookmark className="w-3 h-3 text-amber-400/60" />
+                  <span className="text-[10px] text-muted-foreground">
+                    Total: <span className="text-foreground font-medium">{activityData.totalActivities}</span>
+                  </span>
+                </div>
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="py-8 text-center">
+            <Calendar className="w-10 h-10 text-muted-foreground/20 mx-auto mb-2" />
+            <p className="text-sm text-muted-foreground/50">No activity yet</p>
+            <p className="text-xs text-muted-foreground/30 mt-1">Connect X and sync your bookmarks to see activity</p>
+          </div>
+        )}
       </motion.div>
 
       {/* Top Creators */}
@@ -193,21 +266,33 @@ export function ProfileView() {
           <Star className="w-4 h-4 text-amber-400" />
           <h2 className="font-semibold">Top Creators</h2>
         </div>
-        <div className="space-y-3">
-          {(() => {
-            const authorMap: Record<string, { name: string; username: string; count: number; totalLikes: number }> = {};
-            bookmarks.forEach((b) => {
-              if (!b.xAuthorUsername) return;
-              if (!authorMap[b.xAuthorUsername]) {
-                authorMap[b.xAuthorUsername] = { name: b.xAuthorName || '', username: b.xAuthorUsername, count: 0, totalLikes: 0 };
-              }
-              authorMap[b.xAuthorUsername].count++;
-              authorMap[b.xAuthorUsername].totalLikes += b.likeCount;
-            });
-            return Object.values(authorMap)
-              .sort((a, b) => b.count - a.count)
-              .slice(0, 8)
-              .map((author, i) => (
+        {(() => {
+          const authorMap: Record<string, { name: string; username: string; count: number; totalLikes: number }> = {};
+          bookmarks.forEach((b) => {
+            if (!b.xAuthorUsername) return;
+            if (!authorMap[b.xAuthorUsername]) {
+              authorMap[b.xAuthorUsername] = { name: b.xAuthorName || '', username: b.xAuthorUsername, count: 0, totalLikes: 0 };
+            }
+            authorMap[b.xAuthorUsername].count++;
+            authorMap[b.xAuthorUsername].totalLikes += b.likeCount;
+          });
+          const topAuthors = Object.values(authorMap)
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 8);
+
+          if (topAuthors.length === 0) {
+            return (
+              <div className="py-6 text-center">
+                <Star className="w-8 h-8 text-muted-foreground/20 mx-auto mb-2" />
+                <p className="text-sm text-muted-foreground/50">No creators yet</p>
+                <p className="text-xs text-muted-foreground/30 mt-1">Sync your bookmarks to see your top creators</p>
+              </div>
+            );
+          }
+
+          return (
+            <div className="space-y-3">
+              {topAuthors.map((author, i) => (
                 <div key={author.username} className="flex items-center gap-3">
                   <span className="text-xs text-muted-foreground w-5 text-right">{i + 1}</span>
                   <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${getAvatarColor(author.name)} flex items-center justify-center text-white text-[10px] font-bold`}>
@@ -222,9 +307,10 @@ export function ProfileView() {
                     <p className="text-[10px] text-muted-foreground">bookmarks</p>
                   </div>
                 </div>
-              ));
-          })()}
-        </div>
+              ))}
+            </div>
+          );
+        })()}
       </motion.div>
 
       {/* Engagement Stats */}
@@ -270,25 +356,33 @@ export function ProfileView() {
           <FolderOpen className="w-4 h-4 text-amber-400" />
           <h2 className="font-semibold">Collections</h2>
         </div>
-        <div className="space-y-2">
-          {collections.map((col) => {
-            const count = bookmarks.filter((b) => b.collections.some((c) => c.id === col.id)).length;
-            const pct = bookmarks.length > 0 ? (count / bookmarks.length) * 100 : 0;
-            return (
-              <div key={col.id} className="flex items-center gap-3">
-                <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: col.color }} />
-                <span className="text-sm flex-1">{col.icon} {col.name}</span>
-                <span className="text-xs text-muted-foreground">{count}</span>
-                <div className="w-24 h-1.5 rounded-full bg-secondary overflow-hidden">
-                  <div
-                    className="h-full rounded-full transition-all duration-500"
-                    style={{ width: `${pct}%`, backgroundColor: col.color || undefined }}
-                  />
+        {collections.length === 0 ? (
+          <div className="py-6 text-center">
+            <FolderOpen className="w-8 h-8 text-muted-foreground/20 mx-auto mb-2" />
+            <p className="text-sm text-muted-foreground/50">No collections yet</p>
+            <p className="text-xs text-muted-foreground/30 mt-1">Create collections to organize your bookmarks</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {collections.map((col) => {
+              const count = bookmarks.filter((b) => b.collections.some((c) => c.id === col.id)).length;
+              const pct = bookmarks.length > 0 ? (count / bookmarks.length) * 100 : 0;
+              return (
+                <div key={col.id} className="flex items-center gap-3">
+                  <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: col.color || undefined }} />
+                  <span className="text-sm flex-1">{col.icon} {col.name}</span>
+                  <span className="text-xs text-muted-foreground">{count}</span>
+                  <div className="w-24 h-1.5 rounded-full bg-secondary overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-all duration-500"
+                      style={{ width: `${pct}%`, backgroundColor: col.color || undefined }}
+                    />
+                  </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </motion.div>
 
       {/* Logout */}
@@ -309,6 +403,12 @@ export function ProfileView() {
                 ? `Connected as @${user.xUsername || 'user'}`
                 : 'Not connected'}
             </p>
+            {authMethod && (
+              <div className={`inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-md text-[10px] font-medium border ${authMethod.bgColor} ${authMethod.color}`}>
+                <authMethod.icon className="w-2.5 h-2.5" />
+                {authMethod.label}
+              </div>
+            )}
           </div>
           {user?.xConnected && (
             <motion.button

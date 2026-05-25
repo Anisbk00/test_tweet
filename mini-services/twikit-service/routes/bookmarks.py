@@ -1,11 +1,12 @@
-"""Bookmark fetching and syncing endpoints."""
+"""Bookmark fetching and syncing endpoints - uses dual provider (X API primary, Twikit fallback)."""
 
 import logging
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
-from auth import get_user_cookies
+from auth import get_user_cookies, get_session_store
+from services.dual_provider import get_dual_provider
 from services.twikit_provider import get_twikit_provider
 from services.queue import get_queue
 from config import settings
@@ -21,18 +22,18 @@ async def get_bookmarks(
     cursor: Optional[str] = Query(None, description="Pagination cursor"),
     limit: int = Query(settings.DEFAULT_PAGE_LIMIT, description="Items per page", ge=1, le=settings.MAX_PAGE_LIMIT),
 ):
-    """Get bookmarks for a user with pagination."""
-    cookies = get_user_cookies(user_id)
-    provider = get_twikit_provider()
+    """Get bookmarks for a user with pagination (X API primary, Twikit fallback)."""
+    provider = get_dual_provider()
 
     try:
         result = await provider.get_bookmarks(
             user_id=user_id,
-            cookies=cookies,
             cursor=cursor,
             limit=limit,
         )
         return result
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to fetch bookmarks for user {user_id}: {e}")
         raise HTTPException(
@@ -46,9 +47,8 @@ async def sync_bookmarks(
     user_id: str = Query(..., description="User ID"),
     full_sync: bool = Query(False, description="Perform a full sync instead of incremental"),
 ):
-    """Trigger a background bookmark sync for a user."""
-    cookies = get_user_cookies(user_id)
-    provider = get_twikit_provider()
+    """Trigger a background bookmark sync for a user (X API primary, Twikit fallback)."""
+    provider = get_dual_provider()
     queue = get_queue()
 
     # Check if there's already an active sync
@@ -66,11 +66,11 @@ async def sync_bookmarks(
         cursor = None
         page_count = 0
         max_pages = 50 if full_sync else 5
+        provider_used = "unknown"
 
         while page_count < max_pages:
             result = await provider.get_bookmarks(
                 user_id=user_id,
-                cookies=cookies,
                 cursor=cursor,
                 limit=settings.SYNC_BATCH_SIZE,
             )
@@ -78,25 +78,24 @@ async def sync_bookmarks(
             bookmarks = result.get("data", [])
             all_bookmarks.extend(bookmarks)
             page_count += 1
+            provider_used = result.get("provider", "unknown")
 
-            # Update progress
             if not result.get("has_more", False):
                 break
 
             cursor = result.get("cursor")
 
-            # Small delay between pages to avoid rate limiting
             import asyncio
             await asyncio.sleep(settings.TWIKIT_API_DELAY)
 
         # Invalidate cache after sync
-        cache = provider._cache
-        cache.invalidate_user(user_id)
+        provider.invalidate_user_cache(user_id)
 
         return {
             "total_bookmarks": len(all_bookmarks),
             "pages_fetched": page_count,
             "full_sync": full_sync,
+            "provider_used": provider_used,
         }
 
     task_id = queue.enqueue(

@@ -14,16 +14,42 @@ export default function Home() {
   // Initialize app - check auth
   useEffect(() => {
     async function init() {
+      // Handle OAuth callback redirect params
+      const params = new URLSearchParams(window.location.search);
+      const xConnected = params.get('x_connected');
+      const xMethod = params.get('x_method');
+      const xError = params.get('error');
+
+      // Clean URL params after reading them
+      if (xConnected || xError) {
+        window.history.replaceState({}, '', window.location.pathname);
+      }
+
       if (token) {
         try {
           const user = await api.auth.me();
           if (user?.user) {
             setAuth(token, user.user);
+
+            // Show toast for OAuth callback
+            if (xConnected === 'true' && user.user.xConnected) {
+              const method = xMethod === 'x_api' ? 'X API (OAuth 2.0)' : 'Twikit';
+              const { toast } = await import('sonner');
+              toast.success(`Connected via ${method} as @${user.user.xUsername || 'user'}`);
+            }
           }
         } catch {
           useAppStore.getState().logout();
         }
       }
+
+      // Show error toast if OAuth failed
+      if (xError) {
+        const { toast } = await import('sonner');
+        const errorDetail = params.get('error_detail') || 'Connection failed';
+        toast.error(errorDetail);
+      }
+
       setIsInitialized(true);
     }
     init();
