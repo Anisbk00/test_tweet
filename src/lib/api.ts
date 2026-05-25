@@ -1,0 +1,142 @@
+import { useAppStore } from './store';
+
+const API_BASE = '/api';
+
+async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
+  const token = useAppStore.getState().token;
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(options?.headers as Record<string, string>),
+  };
+
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...options,
+    headers,
+  });
+
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ error: 'Request failed' }));
+    throw new Error(error.error || `HTTP ${res.status}`);
+  }
+
+  return res.json();
+}
+
+// Auth
+export const auth = {
+  login: (email: string, password: string) =>
+    apiFetch<{ token: string; user: any }>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    }),
+  register: (email: string, password: string, name: string) =>
+    apiFetch<{ token: string; user: any }>('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({ email, password, name }),
+    }),
+  me: () => apiFetch<any>('/auth/me'),
+  logout: () => apiFetch<void>('/auth/logout', { method: 'POST' }),
+};
+
+// Bookmarks
+export const bookmarks = {
+  list: (params?: Record<string, string>) => {
+    const query = params ? '?' + new URLSearchParams(params).toString() : '';
+    return apiFetch<{ data: any[]; pagination: any }>(`/bookmarks${query}`);
+  },
+  get: (id: string) => apiFetch<any>(`/bookmarks/${id}`),
+  sync: () => apiFetch<any>('/bookmarks/sync', { method: 'POST' }),
+  update: (id: string, data: any) =>
+    apiFetch<any>(`/bookmarks/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  delete: (id: string) =>
+    apiFetch<void>(`/bookmarks/${id}`, { method: 'DELETE' }),
+};
+
+// Collections
+export const collections = {
+  list: () => apiFetch<any[]>('/collections'),
+  create: (data: any) =>
+    apiFetch<any>('/collections', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  update: (id: string, data: any) =>
+    apiFetch<any>(`/collections/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  delete: (id: string) =>
+    apiFetch<void>(`/collections/${id}`, { method: 'DELETE' }),
+  addBookmarks: (id: string, bookmarkIds: string[]) =>
+    apiFetch<any>(`/collections/${id}/bookmarks`, {
+      method: 'POST',
+      body: JSON.stringify({ bookmarkIds }),
+    }),
+  removeBookmarks: (id: string, bookmarkIds: string[]) =>
+    apiFetch<any>(`/collections/${id}/bookmarks`, {
+      method: 'DELETE',
+      body: JSON.stringify({ bookmarkIds }),
+    }),
+  reorder: (order: { id: string; sortOrder: number }[]) =>
+    apiFetch<void>('/collections/reorder', {
+      method: 'POST',
+      body: JSON.stringify({ order }),
+    }),
+};
+
+// Tags
+export const tags = {
+  list: () => apiFetch<any[]>('/tags'),
+  create: (name: string, color?: string) =>
+    apiFetch<any>('/tags', {
+      method: 'POST',
+      body: JSON.stringify({ name, color }),
+    }),
+  delete: (id: string) => apiFetch<void>(`/tags/${id}`, { method: 'DELETE' }),
+  addToBookmarks: (id: string, bookmarkIds: string[]) =>
+    apiFetch<any>(`/tags/${id}/bookmarks`, {
+      method: 'POST',
+      body: JSON.stringify({ bookmarkIds }),
+    }),
+};
+
+// Search
+export const search = {
+  query: (params: Record<string, string>) => {
+    const query = new URLSearchParams(params).toString();
+    return apiFetch<{ data: any[]; pagination: any }>(`/search?${query}`);
+  },
+};
+
+// Analytics
+export const analytics = {
+  overview: () => apiFetch<any>('/analytics/overview'),
+  activity: () => apiFetch<any>('/analytics/activity'),
+  creators: () => apiFetch<any>('/analytics/creators'),
+  trending: () => apiFetch<any>('/analytics/trending'),
+};
+
+// Discovery
+export const discovery = {
+  related: (bookmarkId: string) => apiFetch<any>(`/discovery/related/${bookmarkId}`),
+  recommendations: () => apiFetch<any>('/discovery/recommendations'),
+  trending: () => apiFetch<any>('/discovery/trending'),
+};
+
+// Sync
+export const sync = {
+  status: () => apiFetch<any>('/sync/status'),
+  trigger: () => apiFetch<any>('/sync/trigger', { method: 'POST' }),
+};
+
+// Seed
+export const seed = {
+  run: () => apiFetch<any>('/seed', { method: 'POST' }),
+};

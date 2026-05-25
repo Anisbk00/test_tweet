@@ -1,0 +1,21 @@
+{
+  "name": "BookmarkVault",
+  "short_name": "BV",
+  "description": "Your Social Memory App for X/Twitter",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0a12",
+  "theme_color": "#0a0a12",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["social", "productivity", "utilities"],
+  "screenshots": [],
+  "prefer_related_applications": false
+}

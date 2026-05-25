@@ -1,0 +1,122 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  username      String?
+  avatarUrl     String?
+  xUserId       String?   @unique
+  xUsername     String?
+  xAccessToken  String?   // encrypted
+  xRefreshToken String?   // encrypted
+  passwordHash  String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  bookmarks   Bookmark[]
+  collections Collection[]
+  sessions    Session[]
+  activities  Activity[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Collection {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  description String?
+  coverUrl    String?
+  color       String?
+  icon        String?
+  isSmart     Boolean  @default(false)
+  smartQuery  String?
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bookmarks Bookmark[]
+  tags      Tag[]
+}
+
+model Bookmark {
+  id              String   @id @default(cuid())
+  userId          String
+  xPostId         String   @unique
+  xAuthorId       String?
+  xAuthorName     String?
+  xAuthorUsername String?
+  xAuthorAvatar   String?
+  content         String
+  mediaUrls       String   @default("[]") // JSON array of URLs
+  mediaTypes      String   @default("[]") // JSON array: photo, video, gif
+  replyCount      Int      @default(0)
+  repostCount     Int      @default(0)
+  likeCount       Int      @default(0)
+  viewCount       Int      @default(0)
+  bookmarkCount   Int      @default(0)
+  isBookmarked    Boolean  @default(true)
+  postedAt        DateTime?
+  savedAt         DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  collections Collection[]
+  tags        Tag[]
+  aiSummary   String?
+  embeddings  String?      // JSON stored vector for semantic search
+}
+
+model Tag {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  color       String?
+  createdAt   DateTime @default(now())
+
+  collections Collection[]
+  bookmarks   Bookmark[]
+
+  @@unique([userId, name])
+}
+
+model Activity {
+  id        String   @id @default(cuid())
+  userId    String
+  type      String   // bookmark_save, collection_create, search, etc.
+  metadata  String   @default("{}") // JSON
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model SyncStatus {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  lastSyncAt     DateTime @default(now())
+  lastBookmarkId String?
+  isSyncing      Boolean  @default(false)
+  syncCount      Int      @default(0)
+  errorCount     Int      @default(0)
+  lastError      String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
