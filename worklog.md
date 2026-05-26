@@ -24,3 +24,33 @@ Stage Summary:
 - Added multiple alternative query IDs for fallback
 - Improved error handling in dual-provider.ts to distinguish between "no bookmarks" (valid empty) vs "API failed" (0 pages)
 - All changes pass lint check
+
+---
+Task ID: 1
+Agent: Main Agent
+Task: Fix cookie-based bookmark sync 500 error - trace error chain, fix GraphQL error handling, improve error propagation, fix frontend bugs
+
+Work Log:
+- Read and analyzed all code in the error chain: x-cookie-api.ts (1182 lines), dual-provider.ts (760 lines), bookmarks/sync/route.ts, diagnose/route.ts
+- Searched web for latest X GraphQL query IDs from fa0311/TwitterInternalAPIDocument - confirmed our fallback IDs match their repo
+- Identified CRITICAL BUG: X's GraphQL API returns errors with HTTP 200 status code, but cookieFetch only checked HTTP status codes. GraphQL errors like {"errors": [...], "data": null} were silently passed through
+- Fixed cookieFetch to parse response body and check for GraphQL errors array
+- Added graphqlErrors and errorCode properties to thrown errors for better handling
+- Added detailed error collection across all query ID attempts in getCookieBookmarks
+- Added raw API response logging for debugging
+- Enhanced dual-provider.ts error messages to include actual X API error details instead of generic "no bookmarks"
+- Created new /api/sync/debug endpoint that makes raw X GraphQL API requests and returns the full response for diagnostics
+- Enhanced /api/sync/diagnose endpoint to include GraphQL error details
+- Fixed frontend bug: s.map is not a function - added Array.isArray guards on bookmark.tags and bookmark.collections
+- Fixed frontend bug: Failed to construct Image - enhanced URL validation in parseMediaUrls
+- Fixed frontend: Search/discovery API response shape mismatches (res.data vs res.bookmarks, etc.)
+- Fixed frontend: Sync success check now checks syncedCount > 0, not just success field
+- All changes pass lint check
+- Pushed to GitHub (commit 0a610d7)
+
+Stage Summary:
+- Root cause: GraphQL errors returned with HTTP 200 were not being caught, causing silent failures
+- Key fix: Added GraphQL error body checking in cookieFetch
+- Added debug endpoint: GET /api/sync/debug for raw X API response diagnostics
+- Frontend fixes: Array.isArray guards, URL validation, API response shape fixes
+- Deployment: Pushed to GitHub, will auto-redeploy to x-tweet.space-z.ai
