@@ -105,7 +105,7 @@ export const bookmarks = {
     return apiFetch<{ bookmarks: any[]; data?: any[]; pagination: any }>(`/bookmarks${query}`);
   },
   get: (id: string) => apiFetch<any>(`/bookmarks/${id}`),
-  sync: () => apiFetch<any>('/bookmarks/sync', { method: 'POST' }),
+  sync: () => apiFetch<{ syncedCount: number; pages: number; hasMore: boolean; provider?: string; success?: boolean }>('/bookmarks/sync', { method: 'POST' }),
   update: (id: string, data: any) =>
     apiFetch<any>(`/bookmarks/${id}`, {
       method: 'PUT',
@@ -117,7 +117,7 @@ export const bookmarks = {
 
 // Collections
 export const collections = {
-  list: () => apiFetch<any[]>('/collections'),
+  list: () => apiFetch<{ collections: any[] }>('/collections'),
   create: (data: any) =>
     apiFetch<any>('/collections', {
       method: 'POST',
@@ -149,7 +149,7 @@ export const collections = {
 
 // Tags
 export const tags = {
-  list: () => apiFetch<any[]>('/tags'),
+  list: () => apiFetch<{ tags: any[] }>('/tags'),
   create: (name: string, color?: string) =>
     apiFetch<any>('/tags', {
       method: 'POST',
@@ -167,7 +167,7 @@ export const tags = {
 export const search = {
   query: (params: Record<string, string>) => {
     const query = new URLSearchParams(params).toString();
-    return apiFetch<{ data: any[]; pagination: any }>(`/search?${query}`);
+    return apiFetch<{ bookmarks: any[]; data?: any[]; pagination: any }>(`/search?${query}`);
   },
 };
 
@@ -182,8 +182,8 @@ export const analytics = {
 // Discovery
 export const discovery = {
   related: (bookmarkId: string) => apiFetch<any>(`/discovery/related/${bookmarkId}`),
-  recommendations: () => apiFetch<any>('/discovery/recommendations'),
-  trending: () => apiFetch<any>('/discovery/trending'),
+  recommendations: () => apiFetch<{ recommendations: any[] }>('/discovery/recommendations'),
+  trending: () => apiFetch<{ trendingTags: any[]; trendingTopics: any[]; trendingCreators: any[] }>('/discovery/trending'),
 };
 
 // Sync

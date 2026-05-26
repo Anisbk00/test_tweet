@@ -13,6 +13,8 @@ export function PostDetail() {
   const bookmark = selectedBookmark;
   const mediaUrls = parseMediaUrls(bookmark.mediaUrls);
   const mediaTypes = parseJSON<string[]>(bookmark.mediaTypes, []);
+  const tags = Array.isArray(bookmark.tags) ? bookmark.tags : [];
+  const collections = Array.isArray(bookmark.collections) ? bookmark.collections : [];
 
   const handleClose = () => {
     setDetailOpen(false);
@@ -131,13 +133,13 @@ export function PostDetail() {
 
           {/* Collections & Tags */}
           <div className="px-5 py-4 space-y-3 border-t border-border/20">
-            {bookmark.collections.length > 0 && (
+            {collections.length > 0 && (
               <div>
                 <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1.5">
                   <Bookmark className="w-3 h-3" /> Collections
                 </div>
                 <div className="flex flex-wrap gap-1.5">
-                  {bookmark.collections.map((col) => (
+                  {collections.map((col) => (
                     <span
                       key={col.id}
                       className="px-2.5 py-1 rounded-lg text-xs font-medium"
@@ -154,13 +156,13 @@ export function PostDetail() {
               </div>
             )}
 
-            {bookmark.tags.length > 0 && (
+            {tags.length > 0 && (
               <div>
                 <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1.5">
                   <Tag className="w-3 h-3" /> Tags
                 </div>
                 <div className="flex flex-wrap gap-1.5">
-                  {bookmark.tags.map((tag) => (
+                  {tags.map((tag) => (
                     <span
                       key={tag.id}
                       className="px-2.5 py-1 rounded-lg text-xs font-medium bg-secondary/50 border border-border/30"

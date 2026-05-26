@@ -20,7 +20,9 @@ export function CollectionsView() {
   const handleCreate = useCallback(async () => {
     if (!newName.trim()) return;
     try {
-      const col = await api.collections.create({ name: newName, color: newColor });
+      const res = await api.collections.create({ name: newName, color: newColor });
+      // API returns { collection: {...} }, extract the collection object
+      const col = res?.collection || res;
       setCollections([...collections, col]);
       setNewName('');
       setIsCreating(false);
@@ -43,7 +45,7 @@ export function CollectionsView() {
 
   const selectedCol = collections.find((c) => c.id === selectedCollection);
   const colBookmarks = selectedCollection
-    ? bookmarks.filter((b) => b.collections.some((c) => c.id === selectedCollection))
+    ? bookmarks.filter((b) => Array.isArray(b.collections) && b.collections.some((c) => c.id === selectedCollection))
     : [];
 
   return (
@@ -113,7 +115,7 @@ export function CollectionsView() {
       {/* Collections Grid */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
         {collections.map((col, i) => {
-          const colBooks = bookmarks.filter((b) => b.collections.some((c) => c.id === col.id));
+          const colBooks = bookmarks.filter((b) => Array.isArray(b.collections) && b.collections.some((c) => c.id === col.id));
           const coverMedia = colBooks.find((b) => {
             const urls = parseMediaUrls(b.mediaUrls);
             return urls.length > 0;

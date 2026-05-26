@@ -53,7 +53,8 @@ export function SearchView() {
       if (filters.sort) params.sort = filters.sort;
 
       const res = await api.search.query(params);
-      setResults(res.data || []);
+      const resultsList = res?.bookmarks || res?.data || [];
+      setResults(Array.isArray(resultsList) ? resultsList : []);
     } catch (err) {
       console.error('Search failed:', err);
     }
@@ -235,7 +236,7 @@ export function SearchView() {
                 <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
                   <span>♥ {formatCount(bookmark.likeCount)}</span>
                   <span>{formatDate(bookmark.postedAt)}</span>
-                  {bookmark.tags?.length > 0 && (
+                  {Array.isArray(bookmark.tags) && bookmark.tags.length > 0 && (
                     <span className="text-amber-400">#{bookmark.tags[0].name}</span>
                   )}
                 </div>

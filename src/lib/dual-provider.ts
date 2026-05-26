@@ -651,7 +651,9 @@ export async function syncBookmarksDual(userId: string): Promise<SyncResult> {
       // 2. API returned unexpected structure (totalPages === 0 means the request may have failed silently)
       if (syncResult.posts.length === 0 && syncResult.totalPages === 0) {
         console.warn('[dual-provider] Cookie sync returned 0 posts and 0 pages — API may have returned unexpected structure or auth failed silently');
-        errors.push('Cookie-based sync returned no bookmarks. The X API query IDs may need updating, or your cookies may have expired. Try reconnecting your X account with fresh cookies (auth_token, ct0, and twid).');
+        // Include any errors from the sync attempt for better diagnostics
+        const syncErrors = errors.length > 0 ? errors.join('; ') : 'No specific error captured';
+        errors.push(`Cookie-based sync returned no bookmarks (0 pages fetched). This usually means the X API rejected the request. Details: ${syncErrors}. Try reconnecting your X account with fresh cookies (auth_token, ct0, and twid).`);
       } else if (syncResult.posts.length === 0 && syncResult.totalPages > 0) {
         // Got a valid response but user has no bookmarks — this is a success, not an error
         console.log('[dual-provider] Cookie sync returned 0 bookmarks but response was valid — user likely has no bookmarks');

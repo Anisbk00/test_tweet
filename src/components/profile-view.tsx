@@ -392,7 +392,7 @@ export function ProfileView() {
         ) : (
           <div className="space-y-2">
             {collections.map((col) => {
-              const count = bookmarks.filter((b) => b.collections.some((c) => c.id === col.id)).length;
+              const count = bookmarks.filter((b) => Array.isArray(b.collections) && b.collections.some((c) => c.id === col.id)).length;
               const pct = bookmarks.length > 0 ? (count / bookmarks.length) * 100 : 0;
               return (
                 <div key={col.id} className="flex items-center gap-3">

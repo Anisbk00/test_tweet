@@ -76,6 +76,7 @@ export function AppShell() {
             if (Array.isArray(data)) return data;
             if (Array.isArray(data?.data)) return data.data;
             if (Array.isArray(data?.collections)) return data.collections;
+            if (Array.isArray(data?.tags)) return data.tags;
             return null;
           };
 

@@ -25,7 +25,7 @@ export function HomeFeed() {
   const filteredBookmarks = bookmarks
     .filter((b) => {
       if (!selectedCollection) return true;
-      return b.collections.some((c) => c.id === selectedCollection);
+      return Array.isArray(b.collections) && b.collections.some((c) => c.id === selectedCollection);
     })
     .sort((a, b) => {
       switch (sortBy) {
@@ -51,8 +51,10 @@ export function HomeFeed() {
       } catch (reloadErr) {
         console.warn('Failed to reload bookmarks after sync:', reloadErr);
       }
-      if (result?.success) {
+      if (result?.success || result?.syncedCount > 0) {
         toast.success(`Synced ${result.syncedCount || 0} bookmarks`);
+      } else if (result?.syncedCount === 0) {
+        toast.info('No new bookmarks to sync');
       } else {
         toast.error('Sync completed with issues');
       }

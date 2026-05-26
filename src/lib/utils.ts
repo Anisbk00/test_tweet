@@ -45,14 +45,24 @@ export function parseJSON<T>(jsonStr: string, fallback: T): T {
 /**
  * Parse JSON and filter out invalid/empty URLs from string arrays.
  * Used for mediaUrls arrays that may contain empty strings or invalid URLs.
+ * Also validates each URL to prevent 'Failed to construct Image' errors.
  */
 export function parseMediaUrls(jsonStr: string): string[] {
   try {
     const parsed = JSON.parse(jsonStr);
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter((url: unknown) =>
-      typeof url === 'string' && url.trim().length > 0 && url.startsWith('http')
-    );
+    return parsed.filter((url: unknown) => {
+      if (typeof url !== 'string' || url.trim().length === 0) return false;
+      const trimmed = url.trim();
+      if (!trimmed.startsWith('http')) return false;
+      // Validate the URL can be parsed — prevents 'Failed to construct Image' errors
+      try {
+        const parsedUrl = new URL(trimmed);
+        return parsedUrl.protocol === 'http:' || parsedUrl.protocol === 'https:';
+      } catch {
+        return false;
+      }
+    });
   } catch {
     return [];
   }

@@ -28,8 +28,17 @@ export function DiscoveryView() {
           api.discovery.recommendations(),
           api.discovery.trending(),
         ]);
-        if (recsRes.status === 'fulfilled') setRecommendations(recsRes.value?.data || []);
-        if (trendingRes.status === 'fulfilled') setTrending(trendingRes.value?.data || []);
+        if (recsRes.status === 'fulfilled') {
+          const recsData = recsRes.value as any;
+          const recsList = recsData?.recommendations || recsData?.data || [];
+          setRecommendations(Array.isArray(recsList) ? recsList : []);
+        }
+        if (trendingRes.status === 'fulfilled') {
+          const trendingData = trendingRes.value as any;
+          // Trending API returns { trendingTags, trendingTopics, trendingCreators }
+          const trendingList = trendingData?.trendingTags || trendingData?.data || [];
+          setTrending(Array.isArray(trendingList) ? trendingList : []);
+        }
       } catch (err) {
         console.error('Failed to load discovery:', err);
       }

@@ -536,7 +536,38 @@ async function cookieFetch<T>(
     throw new Error(`X API error (${response.status}): ${errorText.substring(0, 500)}`);
   }
 
-  return response.json();
+  const responseText = await response.text();
+  let jsonData: any;
+  try {
+    jsonData = JSON.parse(responseText);
+  } catch {
+    console.error(`[x-cookie-api] Non-JSON response for ${path}: ${responseText.substring(0, 500)}`);
+    throw new Error(`X API returned non-JSON response: ${responseText.substring(0, 200)}`);
+  }
+
+  // CRITICAL: GraphQL errors can be returned with HTTP 200 status!
+  // X's GraphQL API returns {"errors": [...], "data": null} with HTTP 200 OK.
+  // We must check for the errors field in the response body.
+  if (jsonData?.errors && Array.isArray(jsonData.errors) && jsonData.errors.length > 0) {
+    const firstError = jsonData.errors[0];
+    const errorCode = firstError.extensions?.code || firstError.code || '';
+    const errorMessage = firstError.message || 'Unknown GraphQL error';
+    const errorDetail = firstError.extensions?.message || '';
+
+    const fullError = `GraphQL error: ${errorMessage}${errorCode ? ` (code: ${errorCode})` : ''}${errorDetail ? ` — ${errorDetail}` : ''}`;
+    console.error(`[x-cookie-api] GraphQL error for ${path}: ${fullError}. Full response: ${responseText.substring(0, 1000)}`);
+
+    // Re-throw as a specific error type so callers can handle it
+    const error = new Error(fullError);
+    (error as any).graphqlErrors = jsonData.errors;
+    (error as any).errorCode = errorCode;
+    throw error;
+  }
+
+  // Log successful response for debugging (first 500 chars)
+  console.log(`[x-cookie-api] Successful response for ${path}: ${responseText.substring(0, 500)}`);
+
+  return jsonData;
 }
 
 // ============================================================
@@ -870,6 +901,7 @@ export async function getCookieBookmarks(
   }
 
   let lastError: Error | null = null;
+  const errorDetails: string[] = []; // Collect all error details for better reporting
 
   for (const attempt of attempts) {
     try {
@@ -882,7 +914,6 @@ export async function getCookieBookmarks(
           params: {
             variables: JSON.stringify(attempt.variables),
             features: JSON.stringify(BOOKMARKS_FEATURES),
-            // NOTE: No fieldToggles — not required by X API
           },
         }
       );
@@ -902,7 +933,9 @@ export async function getCookieBookmarks(
       // Log unexpected but valid responses for debugging
       if (result?.data) {
         const dataKeys = Object.keys(result.data);
-        console.warn(`[x-cookie-api] Response has data but unexpected structure. Keys: ${dataKeys.join(',')}. Full:`, JSON.stringify(result).substring(0, 800));
+        const resultStr = JSON.stringify(result);
+        console.warn(`[x-cookie-api] Response has data but unexpected structure. Keys: ${dataKeys.join(',')}. Full: ${resultStr.substring(0, 1000)}`);
+        errorDetails.push(`${attempt.label}: data keys=[${dataKeys.join(',')}]`);
 
         // Try to parse anyway — maybe the structure is slightly different
         const parsed = parseBookmarksResponse(result);
@@ -910,6 +943,9 @@ export async function getCookieBookmarks(
           console.log(`[x-cookie-api] Parsed ${parsed.data.length} bookmarks from unexpected structure`);
           return parsed;
         }
+      } else {
+        const resultStr = JSON.stringify(result);
+        errorDetails.push(`${attempt.label}: no data field. Response: ${resultStr.substring(0, 200)}`);
       }
 
       // If we get a response but it doesn't have the expected structure
@@ -917,6 +953,7 @@ export async function getCookieBookmarks(
       console.warn(`[x-cookie-api] Unexpected response for ${attempt.label}:`, JSON.stringify(result).substring(0, 500));
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
+      errorDetails.push(`${attempt.label}: ${lastError.message.substring(0, 200)}`);
 
       // If it's a 401/403, the cookies are invalid - no point trying other combinations
       if (lastError.message.includes('Cookie authentication failed') ||
@@ -924,18 +961,27 @@ export async function getCookieBookmarks(
         console.error(`[x-cookie-api] Authentication failed (${attempt.label}):`, lastError.message);
         throw lastError;
       }
-      // 422 GRAPHQL_VALIDATION_FAILED — variables/schema mismatch, try next
-      if (lastError.message.includes('422') || lastError.message.includes('GRAPHQL_VALIDATION_FAILED')) {
+      // GraphQL errors — check for validation failures, incorrect query IDs, etc.
+      if ((error as any).errorCode === 'GRAPHQL_VALIDATION_FAILED' ||
+          lastError.message.includes('GRAPHQL_VALIDATION_FAILED') ||
+          lastError.message.includes('422')) {
         console.warn(`[x-cookie-api] GraphQL validation failed for ${attempt.label}, trying next...`);
         continue;
       }
-      // For other errors (404, etc.), try next attempt
+      // Other GraphQL errors — might be recoverable with a different query ID
+      if ((error as any).graphqlErrors) {
+        console.warn(`[x-cookie-api] GraphQL error for ${attempt.label}: ${lastError.message}, trying next...`);
+        continue;
+      }
+      // For other errors (404, rate limit, etc.), try next attempt
       console.warn(`[x-cookie-api] Error for ${attempt.label}:`, lastError.message);
       continue;
     }
   }
 
-  throw lastError || new Error('All bookmark endpoints failed. The X API query IDs may have changed. Try reconnecting your X account with fresh cookies.');
+  const detailedMessage = lastError?.message || 'All bookmark endpoints failed';
+  const attemptsSummary = errorDetails.length > 0 ? ` Attempts: ${errorDetails.join('; ')}` : '';
+  throw new Error(`${detailedMessage}.${attemptsSummary} The X API query IDs may need updating. Try reconnecting your X account with fresh cookies.`);
 }
 
 /**

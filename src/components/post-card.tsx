@@ -16,6 +16,8 @@ export function PostCard({ bookmark, variant = 'masonry' }: PostCardProps) {
   const [isHovered, setIsHovered] = useState(false);
   const mediaUrls = parseMediaUrls(bookmark.mediaUrls);
   const mediaTypes = parseJSON<string[]>(bookmark.mediaTypes, []);
+  const tags = Array.isArray(bookmark.tags) ? bookmark.tags : [];
+  const collections = Array.isArray(bookmark.collections) ? bookmark.collections : [];
   const hasMedia = mediaUrls.length > 0;
   const firstMediaType = mediaTypes[0] || 'photo';
 
@@ -154,9 +156,9 @@ export function PostCard({ bookmark, variant = 'masonry' }: PostCardProps) {
         )}
 
         {/* Tags */}
-        {bookmark.tags.length > 0 && (
+        {tags.length > 0 && (
           <div className="flex flex-wrap gap-1 mb-2">
-            {bookmark.tags.slice(0, 3).map((tag) => (
+            {tags.slice(0, 3).map((tag) => (
               <span
                 key={tag.id}
                 className="px-2 py-0.5 rounded-md text-[10px] font-medium"

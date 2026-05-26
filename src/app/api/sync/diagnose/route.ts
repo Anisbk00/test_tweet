@@ -8,7 +8,7 @@ import { validateCookiesDetailed, normalizeCookies, getCookieBookmarks } from '@
  *
  * Diagnostic endpoint that tests the user's X cookies and attempts
  * a single bookmark fetch to identify issues. Returns detailed info
- * about what's working and what's not.
+ * about what's working and what's not, including raw API responses.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -50,6 +50,7 @@ export async function GET(request: NextRequest) {
           auth_token_length: cookies.auth_token?.length || 0,
           ct0_length: cookies.ct0?.length || 0,
           twid_provided: !!cookies.twid,
+          twid_value: cookies.twid ? (cookies.twid as string).substring(0, 20) + '...' : null,
         };
 
         if (cookies.auth_token && cookies.ct0) {
@@ -67,28 +68,33 @@ export async function GET(request: NextRequest) {
           diagnosis.cookieValidationError = validationResult.error;
           diagnosis.cookieValidationDetails = validationResult.details;
 
-          // Step 2: Try fetching bookmarks (just the first page)
-          if (validationResult.valid) {
-            diagnosis.bookmarkFetch = 'running';
-            try {
-              const bookmarksResult = await getCookieBookmarks(normalized, undefined, 5);
-              diagnosis.bookmarkFetch = 'success';
-              diagnosis.bookmarkCount = bookmarksResult.count;
-              diagnosis.bookmarkHasMore = bookmarksResult.has_more;
-              diagnosis.bookmarkCursor = bookmarksResult.cursor ? 'present' : null;
-              diagnosis.sampleBookmarks = bookmarksResult.data.slice(0, 2).map(b => ({
-                id: b.id,
-                author: b.author.username,
-                contentPreview: b.content.substring(0, 80),
-                mediaCount: b.media.length,
-              }));
-            } catch (bookmarkError) {
-              diagnosis.bookmarkFetch = 'failed';
-              diagnosis.bookmarkFetchError = bookmarkError instanceof Error ? bookmarkError.message : String(bookmarkError);
+          // Step 2: Try fetching bookmarks (just the first page) with raw response capture
+          diagnosis.bookmarkFetch = 'running';
+          try {
+            const bookmarksResult = await getCookieBookmarks(normalized, undefined, 5);
+            diagnosis.bookmarkFetch = 'success';
+            diagnosis.bookmarkCount = bookmarksResult.count;
+            diagnosis.bookmarkHasMore = bookmarksResult.has_more;
+            diagnosis.bookmarkCursor = bookmarksResult.cursor ? 'present' : null;
+            diagnosis.sampleBookmarks = bookmarksResult.data.slice(0, 2).map(b => ({
+              id: b.id,
+              author: b.author.username,
+              contentPreview: b.content.substring(0, 80),
+              mediaCount: b.media.length,
+            }));
+          } catch (bookmarkError) {
+            diagnosis.bookmarkFetch = 'failed';
+            diagnosis.bookmarkFetchError = bookmarkError instanceof Error ? bookmarkError.message : String(bookmarkError);
+            // Include GraphQL errors if available
+            if ((bookmarkError as any).graphqlErrors) {
+              diagnosis.graphqlErrors = (bookmarkError as any).graphqlErrors;
+            }
+            if ((bookmarkError as any).errorCode) {
+              diagnosis.graphqlErrorCode = (bookmarkError as any).errorCode;
             }
           }
         }
-      } catch {
+      } catch (e) {
         diagnosis.hasCookies = false;
         diagnosis.cookieParseError = 'Failed to parse stored cookies';
       }
