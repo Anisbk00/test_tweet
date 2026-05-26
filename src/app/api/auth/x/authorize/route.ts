@@ -8,12 +8,14 @@ import { redirectUrl } from '@/lib/url';
  * GET /api/auth/x/authorize
  *
  * Initiates the X OAuth 2.0 PKCE flow directly from Next.js.
- * No Python service dependency — works on Vercel.
+ * No Python service dependency — works on Vercel / Z.ai sandbox.
  *
  * Flow:
  * 1. Authenticates the user via Authorization header or ?token query param
  * 2. Generates a PKCE code_verifier + state directly in Next.js
- * 3. Stores code_verifier and state in secure HttpOnly cookies
+ * 3. Stores code_verifier and state in the DATABASE (not cookies — cookies
+ *    get lost when the app runs in an iframe on a different domain than
+ *    the OAuth callback URL)
  * 4. Redirects the user to X's authorization page
  */
 export async function GET(request: NextRequest) {
@@ -72,51 +74,41 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(errorUrl);
     }
 
-    console.log('[OAuth] Authorize redirect URI:', redirectUri);
+    console.log('[OAuth Authorize] userId:', userId, 'redirectUri:', redirectUri);
 
-    // Generate PKCE pair and authorization URL directly in Next.js
+    // Generate PKCE pair and authorization URL
     const pkce = generatePKCEPair();
     const authorizeUrl = getOAuth2AuthorizeUrl(pkce, redirectUri);
 
-    // Store PKCE data and user context in secure HttpOnly cookies
-    const response = NextResponse.redirect(authorizeUrl);
-
-    response.cookies.set('x_oauth2_code_verifier', pkce.code_verifier, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 60 * 10, // 10 minutes
+    // Store PKCE data in the DATABASE instead of cookies
+    // This is critical because the app may run in a preview iframe
+    // on a different domain than the OAuth callback URL, causing cookies
+    // to be lost during the cross-domain redirect
+    await db.oAuthState.create({
+      data: {
+        state: pkce.state,
+        codeVerifier: pkce.code_verifier,
+        userId,
+        redirectUri,
+        expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes
+      },
     });
 
-    response.cookies.set('x_oauth2_state', pkce.state, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 60 * 10,
-    });
+    // Clean up expired OAuth states (best-effort)
+    try {
+      await db.oAuthState.deleteMany({
+        where: { expiresAt: { lt: new Date() } },
+      });
+    } catch {
+      // ignore cleanup errors
+    }
 
-    // Store the user ID and redirect URI so the callback knows who this is for
-    response.cookies.set('x_oauth2_user_id', userId, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 60 * 10,
-    });
+    console.log('[OAuth Authorize] Stored state in DB, redirecting to X. state:', pkce.state.substring(0, 8) + '...');
 
-    response.cookies.set('x_oauth2_redirect_uri', redirectUri, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 60 * 10,
-    });
-
-    return response;
+    // No need to set cookies — everything is in the DB now
+    return NextResponse.redirect(authorizeUrl);
   } catch (error) {
-    console.error('X OAuth 2.0 authorize error:', error);
+    console.error('[OAuth Authorize] Error:', error);
 
     // Redirect to the app with an error message
     const errorUrl = redirectUrl(request, '/');

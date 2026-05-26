@@ -12,12 +12,18 @@ import { redirectUrl } from '@/lib/url';
  *
  * Flow:
  * 1. Receives the authorization code and state from X
- * 2. Validates the state matches the one stored in the cookie
+ * 2. Looks up the state in the DATABASE (not cookies) to find the
+ *    code_verifier, userId, and redirectUri
  * 3. Exchanges the code for tokens directly via X API v2
  * 4. Fetches user info (x_user_id, username) using the access token
  * 5. Stores tokens in the database (User model)
  * 6. Optionally sends tokens to the Twikit service (if available)
  * 7. Redirects to the app with success/error
+ *
+ * NOTE: We use the database instead of cookies because when the app runs
+ * in a preview iframe on a different domain than the OAuth callback URL,
+ * cookies are lost during the cross-domain redirect from X back to our
+ * callback. The database is domain-agnostic and always accessible.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -45,35 +51,40 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(redir);
     }
 
-    // Retrieve stored OAuth 2.0 cookies
-    const storedState = request.cookies.get('x_oauth2_state')?.value;
-    const codeVerifier = request.cookies.get('x_oauth2_code_verifier')?.value;
-    const userId = request.cookies.get('x_oauth2_user_id')?.value;
-    const redirectUri = request.cookies.get('x_oauth2_redirect_uri')?.value;
-
-    console.log('[OAuth Callback] Cookies:', {
-      hasState: !!storedState,
-      hasVerifier: !!codeVerifier,
-      hasUserId: !!userId,
-      hasRedirectUri: !!redirectUri,
-      stateMatch: storedState === state,
+    // Look up the OAuth state in the DATABASE
+    const oauthState = await db.oAuthState.findUnique({
+      where: { state },
     });
 
-    // Validate state to prevent CSRF
-    if (!storedState || state !== storedState) {
+    console.log('[OAuth Callback] DB lookup for state:', state.substring(0, 8) + '...', 'found:', !!oauthState);
+
+    if (!oauthState) {
       const redir = redirectUrl(request, '/');
       redir.searchParams.set('error', 'x_oauth_invalid_state');
-      redir.searchParams.set('error_detail', 'OAuth state mismatch. Please try again.');
+      redir.searchParams.set('error_detail', 'OAuth state not found or expired. Please try again.');
       return NextResponse.redirect(redir);
     }
 
-    // Validate required cookies
-    if (!codeVerifier || !userId) {
+    // Check if the state has expired
+    if (new Date() > oauthState.expiresAt) {
+      // Clean up the expired state
+      await db.oAuthState.delete({ where: { state } }).catch(() => {});
       const redir = redirectUrl(request, '/');
       redir.searchParams.set('error', 'x_oauth_expired');
       redir.searchParams.set('error_detail', 'OAuth session expired. Please try again.');
       return NextResponse.redirect(redir);
     }
+
+    const { codeVerifier, userId, redirectUri } = oauthState;
+
+    // Delete the state immediately (one-time use — prevents replay attacks)
+    await db.oAuthState.delete({ where: { state } }).catch(() => {});
+
+    console.log('[OAuth Callback] Found state in DB:', {
+      hasVerifier: !!codeVerifier,
+      userId,
+      redirectUri,
+    });
 
     // Step 1: Exchange the authorization code for tokens directly via X API v2
     console.log('[OAuth Callback] Exchanging code for tokens, redirectUri:', redirectUri);
@@ -148,22 +159,23 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    // Clear the OAuth 2.0 cookies and redirect to the app with success
+    // Clean up any remaining expired OAuth states (best-effort)
+    try {
+      await db.oAuthState.deleteMany({
+        where: { expiresAt: { lt: new Date() } },
+      });
+    } catch {
+      // ignore
+    }
+
+    // Redirect to the app with success
     const redir = redirectUrl(request, '/');
     redir.searchParams.set('x_connected', 'true');
     redir.searchParams.set('x_method', 'x_api');
 
     console.log('[OAuth Callback] Success! Redirecting to:', redir.toString());
 
-    const response = NextResponse.redirect(redir);
-
-    // Clear OAuth 2.0 cookies
-    response.cookies.delete('x_oauth2_code_verifier');
-    response.cookies.delete('x_oauth2_state');
-    response.cookies.delete('x_oauth2_user_id');
-    response.cookies.delete('x_oauth2_redirect_uri');
-
-    return response;
+    return NextResponse.redirect(redir);
   } catch (error) {
     console.error('[OAuth Callback] Error:', error);
 

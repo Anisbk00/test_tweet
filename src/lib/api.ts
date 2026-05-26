@@ -77,7 +77,16 @@ export const auth = {
     // Initiate OAuth 2.0 PKCE flow by redirecting to the authorize endpoint
     // The backend will redirect to X's OAuth page
     const token = useAppStore.getState().token;
-    window.location.href = `/api/auth/x/authorize${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+    const authorizeUrl = `/api/auth/x/authorize${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+
+    // If we're in an iframe (Z.ai preview panel), open in a new tab
+    // because X's OAuth page blocks framing (X-Frame-Options)
+    const isInIframe = typeof window !== 'undefined' && window.self !== window.top;
+    if (isInIframe) {
+      window.open(authorizeUrl, '_blank');
+    } else {
+      window.location.href = authorizeUrl;
+    }
   },
   getXConfig: () => apiFetch<{
     configured: boolean;

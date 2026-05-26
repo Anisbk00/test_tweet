@@ -25,6 +25,16 @@ export default function Home() {
         window.history.replaceState({}, '', window.location.pathname);
       }
 
+      // If we just completed OAuth in a new tab (from the preview iframe),
+      // try to notify the parent/opener window
+      if (xConnected === 'true' && window.opener) {
+        try {
+          window.opener.postMessage({ type: 'x_oauth_complete', method: xMethod }, '*');
+        } catch {
+          // ignore cross-origin errors
+        }
+      }
+
       if (token) {
         try {
           const user = await api.auth.me();
@@ -36,6 +46,13 @@ export default function Home() {
               const method = xMethod === 'x_api' ? 'X API (OAuth 2.0)' : 'Cookie-based';
               const { toast } = await import('sonner');
               toast.success(`Connected via ${method} as @${user.user.xUsername || 'user'}`);
+
+              // If we're in a popup tab, try to close after short delay
+              if (window.opener) {
+                setTimeout(() => {
+                  try { window.close(); } catch { /* ignore */ }
+                }, 2000);
+              }
             }
           } else {
             // Token is invalid, log out
@@ -57,6 +74,30 @@ export default function Home() {
       setIsInitialized(true);
     }
     init();
+  }, [token, setAuth]);
+
+  // Listen for OAuth completion from a popup/new tab
+  useEffect(() => {
+    function handleMessage(event: MessageEvent) {
+      if (event.data?.type === 'x_oauth_complete') {
+        // Refresh user data from the server
+        (async () => {
+          try {
+            const user = await api.auth.me();
+            if (user?.user && token) {
+              setAuth(token, user.user);
+              const { toast } = await import('sonner');
+              const method = event.data.method === 'x_api' ? 'X API (OAuth 2.0)' : 'Cookie-based';
+              toast.success(`Connected via ${method} as @${user.user.xUsername || 'user'}`);
+            }
+          } catch {
+            // ignore
+          }
+        })();
+      }
+    }
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
   }, [token, setAuth]);
 
   const handleLogin = useCallback(async (email: string, password: string) => {

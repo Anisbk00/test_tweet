@@ -75,3 +75,25 @@ Stage Summary:
 - All critical backend errors fixed (auth resilience, sync error messages, cookie API improvements)
 - Code pushed to GitHub for automatic Vercel redeployment
 - Remaining limitation: cookie-based X API access may fail if cookies are expired or X blocks serverless IPs
+
+---
+Task ID: 1
+Agent: Main Agent
+Task: Fix OAuth 2.0 callback redirect — user stuck in X login loop
+
+Work Log:
+- Diagnosed root cause: OAuth PKCE state was stored in HTTP cookies, which get lost when the app runs in a preview iframe on a different domain (preview-chat-xxx.space-z.ai) than the OAuth callback URL (x-tweet.space-z.ai). Cross-domain redirect from X to callback URL doesn't carry cookies set on the preview domain.
+- Added OAuthState model to Prisma schema to store PKCE state in database instead of cookies
+- Rewrote /api/auth/x/authorize route to store PKCE data (codeVerifier, state, userId, redirectUri) in the database
+- Rewrote /api/auth/x/callback route to look up PKCE state from the database instead of cookies
+- Updated connectXOAuth2() in api.ts to detect iframe context and open OAuth in new tab (X blocks framing)
+- Added postMessage communication between popup/opener windows for OAuth completion
+- Added auto-close of popup tab after successful OAuth connection
+- Added listener in page.tsx for x_oauth_complete messages from popup
+- Ran db:push, lint, and compilation check — all passing
+
+Stage Summary:
+- Root cause: cookies lost in cross-domain redirect (preview domain vs callback domain)
+- Fix: Store PKCE state in database (domain-agnostic, always accessible)
+- Frontend: Handle iframe context by opening OAuth in new tab
+- All code compiles and lints cleanly

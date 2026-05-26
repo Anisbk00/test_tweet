@@ -134,3 +134,16 @@ model SyncStatus {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 }
+
+// OAuth 2.0 PKCE state — stored in DB so it survives cross-domain redirects
+// (cookies get lost when the app runs in a preview iframe on a different domain
+//  than the OAuth callback URL)
+model OAuthState {
+  id            String   @id @default(cuid())
+  state         String   @unique
+  codeVerifier  String
+  userId        String
+  redirectUri   String
+  createdAt     DateTime @default(now())
+  expiresAt     DateTime // auto-cleaned after 10 minutes
+}
