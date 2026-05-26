@@ -155,7 +155,6 @@ const FALLBACK_QUERY_IDS: Record<string, string> = {
 // These include IDs discovered from various sources (may rotate over time)
 const ALTERNATIVE_BOOKMARKS_IDS = [
   'ojgFx9G-r0OkXCFVN9k5oA',
-  '6u3VcFdASPZrP2wkuU3C3A',
 ];
 const ALTERNATIVE_SEARCH_IDS = [
   'fHKoSa-2dbV1UbhUy3EvcA',
@@ -655,66 +654,91 @@ export async function validateCookiesDetailed(cookies: CookieAuth): Promise<Cook
     api_message: '',
   };
 
-  // First, try the simple v1.1 endpoint for user validation
+  // Validate cookies by trying to fetch bookmarks (most reliable method)
+  // v1.1 verify_credentials is deprecated and often blocked by Cloudflare
   try {
-    let cookieStr = `auth_token=${normalized.auth_token}; ct0=${normalized.ct0}`;
-    if (normalized.twid) {
-      cookieStr += `; twid=${encodeURIComponent(normalized.twid)}`;
-    }
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
-
-    const response = await fetch('https://api.x.com/1.1/account/verify_credentials.json', {
-      headers: {
-        'Authorization': `Bearer ${bearerToken}`,
-        'Cookie': cookieStr,
-        'X-CSRF-TOKEN': normalized.ct0,
-        'X-Twitter-Auth-Type': 'OAuth2Session',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-        'Origin': 'https://x.com',
-        'Referer': 'https://x.com/',
-      },
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeout);
-
-    details.api_status = response.status;
-
-    if (response.ok) {
-      const data = await response.json();
-      const userInfo: CookieUserInfo = {
-        id: data.id_str || data.id?.toString(),
-        name: data.name,
-        username: data.screen_name,
-        avatar_url: data.profile_image_url_https?.replace('_normal', '_bigger') || '',
-      };
-
-      return {
-        valid: true,
-        user: userInfo,
-        details,
-      };
-    }
-
-    // Parse error response
-    const errorBody = await response.text().catch(() => '');
-    let errorMsg = `HTTP ${response.status}`;
+    // Try Bookmarks endpoint first (most reliable validation method)
     try {
-      const parsed = JSON.parse(errorBody);
-      errorMsg = parsed?.errors?.[0]?.message || parsed?.detail || errorMsg;
-    } catch {
-      errorMsg = errorBody.substring(0, 100) || errorMsg;
-    }
-    details.api_message = errorMsg;
+      const bookmarksQueryId = FALLBACK_QUERY_IDS.Bookmarks;
+      const testResult = await cookieFetch<any>(
+        `/${bookmarksQueryId}/Bookmarks`,
+        cookies,
+        {
+          method: 'GET',
+          params: {
+            variables: JSON.stringify({ count: 1 }),
+            features: JSON.stringify(BOOKMARKS_FEATURES),
+          },
+        }
+      );
+      
+      // If we can fetch bookmarks, the cookies are valid
+      if (testResult?.data?.bookmark_timeline_v2 !== undefined ||
+          testResult?.data?.viewer?.bookmarks_timeline !== undefined) {
+        details.api_status = 200;
+        details.api_message = 'Cookies validated via bookmarks endpoint';
 
-    // If 401/403 and no twid was provided, try with a constructed twid
-    if ((response.status === 401 || response.status === 403) && !normalized.twid) {
+        return {
+          valid: true,
+          user: null,
+          details,
+        };
+      }
+    } catch (bookmarksError) {
+      console.warn('[x-cookie-api] Bookmarks validation failed:', bookmarksError);
+    }
+
+    // Try v1.1 endpoint as fallback (may be deprecated)
+    try {
+      let cookieStr = `auth_token=${normalized.auth_token}; ct0=${normalized.ct0}`;
+      if (normalized.twid) {
+        cookieStr += `; twid=${encodeURIComponent(normalized.twid)}`;
+      }
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000);
+
+      const response = await fetch('https://api.x.com/1.1/account/verify_credentials.json', {
+        headers: {
+          'Authorization': `Bearer ${bearerToken}`,
+          'Cookie': cookieStr,
+          'X-CSRF-TOKEN': normalized.ct0,
+          'X-Twitter-Auth-Type': 'OAuth2Session',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+          'Origin': 'https://x.com',
+          'Referer': 'https://x.com/',
+        },
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeout);
+      details.api_status = response.status;
+
+      if (response.ok) {
+        const data = await response.json();
+        const userInfo: CookieUserInfo = {
+          id: data.id_str || data.id?.toString(),
+          name: data.name,
+          username: data.screen_name,
+          avatar_url: data.profile_image_url_https?.replace('_normal', '_bigger') || '',
+        };
+
+        return {
+          valid: true,
+          user: userInfo,
+          details,
+        };
+      }
+    } catch (v11Error) {
+      console.warn('[x-cookie-api] v1.1 validation failed:', v11Error);
+    }
+
+    // All validation methods failed
+    if (!normalized.twid) {
       return {
         valid: false,
         user: null,
-        error: `Cookie authentication failed (${errorMsg}). Missing twid cookie — X now requires all three cookies (auth_token, ct0, twid). Please copy the twid value from your browser cookies.`,
+        error: `Cookie authentication failed. Missing twid cookie — X now requires all three cookies (auth_token, ct0, twid). Please copy the twid value from your browser cookies.`,
         details,
       };
     }
@@ -722,7 +746,7 @@ export async function validateCookiesDetailed(cookies: CookieAuth): Promise<Cook
     return {
       valid: false,
       user: null,
-      error: `Cookie authentication failed: ${errorMsg}. Your cookies may have expired — please reconnect with fresh cookies.`,
+      error: `Cookie authentication failed. Your cookies may have expired — please reconnect with fresh cookies.`,
       details,
     };
   } catch (error) {
@@ -877,10 +901,11 @@ export async function getCookieBookmarks(
   }
 
   // Method 2: BookmarkSearchTimeline endpoint (search_by_raw_query)
-  // Needs rawQuery (empty = all bookmarks) and count
+  // Needs rawQuery (must be non-empty — use '*' for all) and count
   // NOTE: querySource is NOT needed — confirmed by working Greasy Fork scripts
+  // NOTE: empty string rawQuery causes ERROR_EMPTY_QUERY — must use '*' or a real query
   const searchQueryId = queryIds.BookmarkSearchTimeline || FALLBACK_QUERY_IDS.BookmarkSearchTimeline;
-  const searchVars: Record<string, unknown> = { rawQuery: '', count };
+  const searchVars: Record<string, unknown> = { rawQuery: '*', count };
   if (cursor) searchVars.cursor = cursor;
   attempts.push({
     queryId: searchQueryId,
@@ -919,9 +944,11 @@ export async function getCookieBookmarks(
       );
 
       // Check if response has the expected structure
-      // Bookmarks: data.viewer.bookmarks_timeline.timeline
+      // Bookmarks (2025-03+): data.bookmark_timeline_v2.timeline
+      // Bookmarks (older): data.viewer.bookmarks_timeline.timeline
       // BookmarkSearchTimeline: data.search_by_raw_query.bookmarks_search_timeline.timeline
       const hasExpectedStructure =
+        result?.data?.bookmark_timeline_v2 !== undefined ||
         result?.data?.viewer?.bookmarks_timeline !== undefined ||
         result?.data?.search_by_raw_query?.bookmarks_search_timeline !== undefined;
 
@@ -1072,9 +1099,11 @@ function parseBookmarksResponse(data: any): CookiePaginatedResponse {
   let hasMore = false;
 
   try {
-    // New API path: data.search_by_raw_query.bookmarks_search_timeline.timeline.instructions
-    // Old API path: data.viewer.bookmarks_timeline.timeline.instructions
+    // 2025-03+ API path: data.bookmark_timeline_v2.timeline.instructions
+    // Older API path: data.viewer.bookmarks_timeline.timeline.instructions
+    // Search API path: data.search_by_raw_query.bookmarks_search_timeline.timeline.instructions
     const instructions =
+      data?.data?.bookmark_timeline_v2?.timeline?.instructions ||
       data?.data?.search_by_raw_query?.bookmarks_search_timeline?.timeline?.instructions ||
       data?.data?.viewer?.bookmarks_timeline?.timeline?.instructions || [];
 
@@ -1090,10 +1119,19 @@ function parseBookmarksResponse(data: any): CookiePaginatedResponse {
     }
 
     for (const entry of entries) {
+      const entryId = entry?.entryId || '';
       const entryContent = entry?.content;
-      if (entryContent?.cursorType === 'Bottom' || entryContent?.cursorType === 'Top') {
-        if (entryContent.cursorType === 'Bottom') {
-          cursor = entryContent.value || entryContent.entryId?.replace('cursor-bottom-', '') || null;
+
+      // Handle cursor entries — they can appear as:
+      // 1. entryContent.cursorType === 'Bottom'/'Top' (older format)
+      // 2. entryId starts with 'cursor-top-' or 'cursor-bottom-' (2025+ format)
+      const isCursorTop = entryContent?.cursorType === 'Top' || entryId.startsWith('cursor-top-');
+      const isCursorBottom = entryContent?.cursorType === 'Bottom' || entryId.startsWith('cursor-bottom-');
+
+      if (isCursorTop || isCursorBottom) {
+        if (isCursorBottom) {
+          // Cursor value can be in content.value or extracted from entryId
+          cursor = entryContent?.value || entryId.replace('cursor-bottom-', '') || null;
           hasMore = true;
         }
         continue;
@@ -1111,8 +1149,12 @@ function parseBookmarksResponse(data: any): CookiePaginatedResponse {
           : tweetResult;
 
         const legacy = tweet?.legacy || tweet;
-        const userLegacy = tweet?.core?.user_results?.result?.legacy ||
-                          tweet?.core?.user_results?.result ||
+        const userResult = tweet?.core?.user_results?.result;
+        // X 2025+ format: userResult.core.name, userResult.core.screen_name, userResult.avatar.image_url
+        // Older format: userResult.legacy.name, userResult.legacy.screen_name, userResult.legacy.profile_image_url_https
+        const userCore = userResult?.core;
+        const userLegacy = userResult?.legacy ||
+                          userResult ||
                           tweet?.author;
 
         const media: CookieBookmark['media'] = [];
@@ -1154,10 +1196,10 @@ function parseBookmarksResponse(data: any): CookiePaginatedResponse {
           id: tweet.rest_id || legacy.id_str || entry.entryId?.replace('tweet-', '') || '',
           content: legacy.full_text || legacy.text || '',
           author: {
-            id: userLegacy?.rest_id || userLegacy?.id_str || '',
-            name: userLegacy?.name || '',
-            username: userLegacy?.screen_name || '',
-            avatar_url: (userLegacy?.profile_image_url_https || '').replace('_normal', '_bigger'),
+            id: userResult?.rest_id || userLegacy?.rest_id || userLegacy?.id_str || '',
+            name: userCore?.name || userLegacy?.name || '',
+            username: userCore?.screen_name || userLegacy?.screen_name || '',
+            avatar_url: (userResult?.avatar?.image_url || userLegacy?.profile_image_url_https || '').replace('_normal', '_bigger'),
           },
           media,
           metrics: {

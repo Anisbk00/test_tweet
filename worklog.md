@@ -54,3 +54,29 @@ Stage Summary:
 - Added debug endpoint: GET /api/sync/debug for raw X API response diagnostics
 - Frontend fixes: Array.isArray guards, URL validation, API response shape fixes
 - Deployment: Pushed to GitHub, will auto-redeploy to x-tweet.space-z.ai
+
+---
+Task ID: 2
+Agent: Main Agent
+Task: Fix cookie-based X GraphQL bookmark sync — recognize bookmark_timeline_v2 response structure, fix search query, improve validation
+
+Work Log:
+- Analyzed dev server logs and identified root cause: X API returns data under `data.bookmark_timeline_v2` not `data.viewer.bookmarks_timeline`
+- Fixed response structure check to recognize `data.bookmark_timeline_v2` path
+- Fixed `parseBookmarksResponse` to parse `data.bookmark_timeline_v2.timeline.instructions`
+- Fixed cursor parsing to handle both old (cursorType) and new (entryId prefix) formats
+- Fixed BookmarkSearchTimeline: changed rawQuery from empty string to '*' (empty causes ERROR_EMPTY_QUERY)
+- Updated user info extraction to handle 2025 X API format (core.name, core.screen_name, avatar.image_url)
+- Removed bad alternative query ID 6u3VcFdASPZrP2wkuU3C3A (causes 422 validation errors)
+- Restructured cookie validation: try Bookmarks endpoint first (most reliable), then v1.1 fallback
+- Fixed getCookieUserInfo call in dual-provider to be wrapped in try-catch (was breaking sync on 403)
+- Changed schema: xPostId unique → composite unique [userId, xPostId] (allows multi-user)
+- Removed xUserId @unique constraint (multiple app users can have same X account)
+- Updated all upsert calls to use composite unique key
+- All lint checks pass
+
+Stage Summary:
+- ROOT CAUSE: X's Bookmarks GraphQL endpoint returns `data.bookmark_timeline_v2` (not `data.viewer.bookmarks_timeline`)
+- Sync now works end-to-end: 498 bookmarks synced successfully
+- Cookie validation now uses Bookmarks endpoint as primary (v1.1 deprecated/blocked by Cloudflare)
+- All fixes verified with real X account cookies

@@ -513,7 +513,7 @@ export async function syncBookmarksDual(userId: string): Promise<SyncResult> {
         for (const post of result.data) {
           try {
             await db.bookmark.upsert({
-              where: { xPostId: post.id },
+              where: { userId_xPostId: { userId, xPostId: post.id } },
               update: {
                 content: post.content,
                 xAuthorId: post.author?.id || null,
@@ -592,7 +592,7 @@ export async function syncBookmarksDual(userId: string): Promise<SyncResult> {
         try {
           const transformed = transformCookiePost(post);
           await db.bookmark.upsert({
-            where: { xPostId: transformed.xPostId },
+            where: { userId_xPostId: { userId, xPostId: transformed.xPostId } },
             update: {
               content: transformed.content,
               xAuthorId: transformed.xAuthorId,
@@ -624,16 +624,20 @@ export async function syncBookmarksDual(userId: string): Promise<SyncResult> {
       if (allSynced > 0) {
         // Update the user's X info if we didn't have it
         if (!user.xUserId && syncResult.posts.length > 0) {
-          // Try to get user info
-          const userInfo = await getCookieUserInfo(cookies);
-          if (userInfo) {
-            await db.user.update({
-              where: { id: userId },
-              data: {
-                xUserId: userInfo.id,
-                xUsername: userInfo.username,
-              },
-            });
+          // Try to get user info (non-critical — may fail if v1.1 API is deprecated)
+          try {
+            const userInfo = await getCookieUserInfo(cookies);
+            if (userInfo) {
+              await db.user.update({
+                where: { id: userId },
+                data: {
+                  xUserId: userInfo.id,
+                  xUsername: userInfo.username,
+                },
+              });
+            }
+          } catch (userInfoErr) {
+            console.warn('[dual-provider] Failed to get user info after sync (non-critical):', userInfoErr);
           }
         }
 
@@ -689,7 +693,7 @@ export async function syncBookmarksDual(userId: string): Promise<SyncResult> {
           try {
             const transformed = transformTwikitPost(post);
             await db.bookmark.upsert({
-              where: { xPostId: transformed.xPostId },
+              where: { userId_xPostId: { userId, xPostId: transformed.xPostId } },
               update: {
                 content: transformed.content,
                 xAuthorId: transformed.xAuthorId,

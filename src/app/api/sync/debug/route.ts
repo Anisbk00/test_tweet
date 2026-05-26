@@ -55,9 +55,7 @@ export async function GET(request: NextRequest) {
     const FALLBACK_BEARER = 'AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA';
     const queryIds = [
       { id: 'ojgFx9G-r0OkXCFVN9k5oA', name: 'Bookmarks' },
-      { id: '6u3VcFdASPZrP2wkuU3C3A', name: 'Bookmarks (alt)' },
       { id: 'fHKoSa-2dbV1UbhUy3EvcA', name: 'BookmarkSearchTimeline' },
-      { id: '5kB8iO1n19yXfcxM4e30Nw', name: 'BookmarkSearchTimeline (alt)' },
     ];
 
     const BOOKMARKS_FEATURES = {
@@ -120,7 +118,7 @@ export async function GET(request: NextRequest) {
       const isSearch = qid.name.includes('Search');
       const operationName = isSearch ? 'BookmarkSearchTimeline' : 'Bookmarks';
       const variables = isSearch
-        ? { rawQuery: '', count: 5 }
+        ? { rawQuery: '*', count: 5 }
         : { count: 5 };
 
       const url = new URL(`https://x.com/i/api/graphql/${qid.id}/${operationName}`);

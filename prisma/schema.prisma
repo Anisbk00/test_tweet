@@ -19,7 +19,7 @@ model User {
   name          String?
   username      String?
   avatarUrl     String?
-  xUserId       String?   @unique
+  xUserId       String?
   xUsername     String?
   // X API v2 OAuth 2.0 tokens (encrypted at rest)
   xOAuth2AccessToken  String?
@@ -72,7 +72,7 @@ model Collection {
 model Bookmark {
   id              String   @id @default(cuid())
   userId          String
-  xPostId         String   @unique
+  xPostId         String
   xAuthorId       String?
   xAuthorName     String?
   xAuthorUsername String?
@@ -96,6 +96,8 @@ model Bookmark {
   collections Collection[]
   tags        Tag[]
   aiSummary   String?
+
+  @@unique([userId, xPostId])
 }
 
 model Tag {
