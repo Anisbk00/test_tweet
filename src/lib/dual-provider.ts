@@ -646,12 +646,22 @@ export async function syncBookmarksDual(userId: string): Promise<SyncResult> {
         };
       }
 
-      // Cookie sync returned 0 posts — this could mean the user has no bookmarks,
-      // OR the API response structure changed and we couldn't parse any.
-      // Treat it as a soft error and fall through to next provider.
+      // Cookie sync returned 0 posts — distinguish between:
+      // 1. User genuinely has no bookmarks (totalPages > 0 means we got a valid empty response)
+      // 2. API returned unexpected structure (totalPages === 0 means the request may have failed silently)
       if (syncResult.posts.length === 0 && syncResult.totalPages === 0) {
-        console.warn('[dual-provider] Cookie sync returned 0 posts and 0 pages — API may have returned unexpected structure or user has no bookmarks');
-        errors.push('Cookie-based sync returned no bookmarks. The X API may have changed its response format, or you have no bookmarks yet.');
+        console.warn('[dual-provider] Cookie sync returned 0 posts and 0 pages — API may have returned unexpected structure or auth failed silently');
+        errors.push('Cookie-based sync returned no bookmarks. The X API query IDs may need updating, or your cookies may have expired. Try reconnecting your X account with fresh cookies (auth_token, ct0, and twid).');
+      } else if (syncResult.posts.length === 0 && syncResult.totalPages > 0) {
+        // Got a valid response but user has no bookmarks — this is a success, not an error
+        console.log('[dual-provider] Cookie sync returned 0 bookmarks but response was valid — user likely has no bookmarks');
+        return {
+          syncedCount: 0,
+          pages: syncResult.totalPages,
+          hasMore: false,
+          provider: 'cookie',
+          errors,
+        };
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Cookie-based sync failed';

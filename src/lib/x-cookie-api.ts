@@ -139,19 +139,26 @@ let cachedQueryIds: Record<string, string> = {};
 let lastQueryIdFetch = 0;
 const QUERY_ID_CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours
 
-// Updated 2025-03: Current query IDs discovered from x.com's main JS bundle
-// X renamed the Bookmarks operation to "BookmarkSearchTimeline" and changed the
-// response path from viewer.bookmarks_timeline to search_by_raw_query.bookmarks_search_timeline
+// Updated 2025-03: Query IDs from fa0311/TwitterInternalAPIDocument
+// Two separate endpoints for bookmarks:
+// - Bookmarks: uses data.viewer.bookmarks_timeline (simpler, just count + cursor)
+// - BookmarkSearchTimeline: uses data.search_by_raw_query.bookmarks_search_timeline (needs rawQuery)
 const FALLBACK_QUERY_IDS: Record<string, string> = {
-  BookmarkSearchTimeline: '5kB8iO1n19yXfcxM4e30Nw',
+  Bookmarks: 'ojgFx9G-r0OkXCFVN9k5oA',
+  BookmarkSearchTimeline: 'fHKoSa-2dbV1UbhUy3EvcA',
   UserByScreenName: 'IGgvgiOx4QZndDHuD3x9TQ',
   UserByRestId: 'VQfQ9wwYdk6j_u2O4vt64Q',
   Viewer: '_8ClT24oZ8tpylf_OSuNdg',
 };
 
-// Alternative query IDs to try if the primary one doesn't work
-// These include older IDs that may still be accepted
+// Alternative query IDs to try if the primary ones don't work
+// These include IDs discovered from various sources (may rotate over time)
 const ALTERNATIVE_BOOKMARKS_IDS = [
+  'ojgFx9G-r0OkXCFVN9k5oA',
+  '6u3VcFdASPZrP2wkuU3C3A',
+];
+const ALTERNATIVE_SEARCH_IDS = [
+  'fHKoSa-2dbV1UbhUy3EvcA',
   '5kB8iO1n19yXfcxM4e30Nw',
 ];
 
@@ -222,8 +229,7 @@ async function discoverQueryIds(): Promise<Record<string, string>> {
 
         const js = await jsResponse.text();
 
-        // X renamed the operation from "Bookmarks" to "BookmarkSearchTimeline"
-        // Try both names for compatibility
+        // Discover BookmarkSearchTimeline query ID
         if (!queryIds.BookmarkSearchTimeline) {
           const bookmarksMatch = js.match(/queryId:"([^"]+)"[^}]*operationName:"BookmarkSearchTimeline"/);
           if (bookmarksMatch) {
@@ -231,8 +237,8 @@ async function discoverQueryIds(): Promise<Record<string, string>> {
           }
         }
 
-        // Fallback: try old "Bookmarks" operation name
-        if (!queryIds.BookmarkSearchTimeline && !queryIds.Bookmarks) {
+        // Discover Bookmarks query ID (separate endpoint, uses viewer.bookmarks_timeline)
+        if (!queryIds.Bookmarks) {
           const oldMatch = js.match(/queryId:"([^"]+)"[^}]*operationName:"Bookmarks"/);
           if (oldMatch) {
             queryIds.Bookmarks = oldMatch[1];
@@ -260,7 +266,7 @@ async function discoverQueryIds(): Promise<Record<string, string>> {
           }
         }
 
-        const bookmarksReady = queryIds.BookmarkSearchTimeline || queryIds.Bookmarks;
+        const bookmarksReady = queryIds.Bookmarks || queryIds.BookmarkSearchTimeline;
         if (bookmarksReady && queryIds.UserByScreenName && queryIds.UserByRestId) {
           break;
         }
@@ -537,29 +543,28 @@ async function cookieFetch<T>(
 // Features Object (required for GraphQL requests)
 // ============================================================
 
-// Updated 2025-03: Features extracted from x.com's main JS bundle for BookmarkSearchTimeline
+// Updated 2025-03: Features from fa0311/TwitterInternalAPIDocument
+// Both Bookmarks and BookmarkSearchTimeline use the same features
 const BOOKMARKS_FEATURES = {
-  rweb_video_screen_enabled: true,
+  rweb_video_screen_enabled: false,
   rweb_cashtags_enabled: true,
   profile_label_improvements_pcf_label_in_post_enabled: true,
-  responsive_web_profile_redirect_enabled: true,
-  rweb_tipjar_consumption_enabled: true,
+  responsive_web_profile_redirect_enabled: false,
+  rweb_tipjar_consumption_enabled: false,
   verified_phone_label_enabled: false,
   creator_subscriptions_tweet_preview_api_enabled: true,
   responsive_web_graphql_timeline_navigation_enabled: true,
   responsive_web_graphql_skip_user_profile_image_extensions_enabled: false,
-  premium_content_api_read_enabled: true,
+  premium_content_api_read_enabled: false,
   communities_web_enable_tweet_community_results_fetch: true,
   c9s_tweet_anatomy_moderator_badge_enabled: true,
-  responsive_web_grok_analyze_button_fetch_trends_enabled: true,
-  responsive_web_grok_analyze_post_followups_enabled: true,
-  rweb_cashtags_composer_attachment_enabled: true,
+  responsive_web_grok_analyze_button_fetch_trends_enabled: false,
+  responsive_web_grok_analyze_post_followups_enabled: false,
   responsive_web_jetfuel_frame: true,
   responsive_web_grok_share_attachment_enabled: true,
   responsive_web_grok_annotations_enabled: true,
   articles_preview_enabled: true,
   responsive_web_edit_tweet_api_enabled: true,
-  rweb_conversational_replies_downvote_enabled: true,
   graphql_is_translatable_rweb_tweet_is_translatable_enabled: true,
   view_counts_everywhere_api_enabled: true,
   longform_notetweets_consumption_enabled: true,
@@ -568,29 +573,20 @@ const BOOKMARKS_FEATURES = {
   content_disclosure_ai_generated_indicator_enabled: true,
   responsive_web_grok_show_grok_translated_post: true,
   responsive_web_grok_analysis_button_from_backend: true,
-  post_ctas_fetch_enabled: true,
+  post_ctas_fetch_enabled: false,
   freedom_of_speech_not_reach_fetch_enabled: true,
   standardized_nudges_misinfo: true,
   tweet_with_visibility_results_prefer_gql_limited_actions_policy_enabled: true,
   longform_notetweets_rich_text_read_enabled: true,
-  longform_notetweets_inline_media_enabled: true,
+  longform_notetweets_inline_media_enabled: false,
   responsive_web_grok_image_annotation_enabled: true,
   responsive_web_grok_imagine_annotation_enabled: true,
   responsive_web_grok_community_note_auto_translation_is_enabled: true,
   responsive_web_enhance_cards_enabled: false,
 };
 
-// Field toggles required by BookmarkSearchTimeline
-const BOOKMARKS_FIELD_TOGGLES = {
-  withPayments: true,
-  withAuxiliaryUserLabels: true,
-  withArticleRichContentState: true,
-  withArticlePlainText: true,
-  withArticleSummaryText: true,
-  withArticleVoiceOver: true,
-  withGrokAnalyze: true,
-  withDisallowedReplyControls: true,
-};
+// NOTE: fieldToggles is NOT needed for bookmarks endpoints — removed.
+// The working Greasy Fork scripts and API docs confirm it's not required.
 
 const USER_FEATURES = {
   hidden_profile_subscriptions_enabled: true,
@@ -800,7 +796,15 @@ export async function getCookieUserInfo(cookies: CookieAuth): Promise<CookieUser
 /**
  * Get user's bookmarks using cookies.
  * This is the main method for cookie-based bookmark fetching.
- * Tries multiple query IDs if the primary one doesn't work.
+ *
+ * Strategy:
+ * 1. Try "Bookmarks" endpoint (viewer.bookmarks_timeline) — simpler, just needs count + cursor
+ * 2. Try "BookmarkSearchTimeline" endpoint (search_by_raw_query) — needs rawQuery + count
+ * 3. Try alternative query IDs for both
+ *
+ * The Bookmarks endpoint is tried first because it's simpler and more reliable
+ * for fetching all bookmarks. BookmarkSearchTimeline is designed for searching
+ * within bookmarks but also works for listing all when rawQuery is empty.
  */
 export async function getCookieBookmarks(
   cookies: CookieAuth,
@@ -808,135 +812,130 @@ export async function getCookieBookmarks(
   count: number = 20
 ): Promise<CookiePaginatedResponse> {
   const queryIds = await discoverQueryIdsSafe();
-  
-  // X renamed the operation from "Bookmarks" to "BookmarkSearchTimeline"
-  // Try the new name first, then fall back to the old one
-  const bookmarkQueryId = queryIds.BookmarkSearchTimeline || queryIds.Bookmarks;
-  
-  // Collect all query IDs to try (discovered + alternatives)
-  const bookmarkQueryIds = [
-    bookmarkQueryId,
-    ...ALTERNATIVE_BOOKMARKS_IDS.filter(id => id !== bookmarkQueryId),
-  ].filter(Boolean);
 
-  // BookmarkSearchTimeline variables — must match X's web client exactly.
-  // Based on X's main JS bundle (main.ede5acfa.js):
-  //   fetchBookmarkSearch:({count:r,cursor:n,querySource:o,rawQuery:l})=>
-  //     e.graphQL(s(),{rawQuery:l||"",count:r,cursor:n,querySource:o,...(0,a.g)(t)})
-  // querySource is required by the GraphQL schema — omitting it causes 422 validation errors.
-  // When viewing all bookmarks (not searching), X sends querySource as undefined
-  // (which JSON.stringify omits), but the variable MUST be present in the schema.
-  // Sending it as an empty string works for "view all bookmarks".
-  const variablesWithQuerySource: Record<string, unknown> = {
-    rawQuery: '',
-    count,
-    querySource: '',
-  };
+  // Build list of attempts: each has queryId, operationName, and variables
+  // Priority: Bookmarks (simpler) → BookmarkSearchTimeline (search-based)
+  const attempts: Array<{
+    queryId: string;
+    operationName: string;
+    variables: Record<string, unknown>;
+    label: string;
+  }> = [];
 
-  // Also prepare variables WITHOUT querySource for fallback
-  // (in case the schema changes and querySource is no longer accepted)
-  const variablesWithoutQuerySource: Record<string, unknown> = {
-    rawQuery: '',
-    count,
-  };
+  // Method 1: Bookmarks endpoint (viewer.bookmarks_timeline)
+  // Only needs count and cursor — much simpler
+  const bookmarksQueryId = queryIds.Bookmarks || FALLBACK_QUERY_IDS.Bookmarks;
+  const bookmarksVars: Record<string, unknown> = { count };
+  if (cursor) bookmarksVars.cursor = cursor;
+  attempts.push({
+    queryId: bookmarksQueryId,
+    operationName: 'Bookmarks',
+    variables: bookmarksVars,
+    label: 'Bookmarks (viewer)',
+  });
+  // Add alternative Bookmarks IDs
+  for (const altId of ALTERNATIVE_BOOKMARKS_IDS) {
+    if (altId !== bookmarksQueryId) {
+      attempts.push({
+        queryId: altId,
+        operationName: 'Bookmarks',
+        variables: { ...bookmarksVars },
+        label: `Bookmarks alt (${altId.substring(0, 8)})`,
+      });
+    }
+  }
 
-  if (cursor) {
-    variablesWithQuerySource.cursor = cursor;
-    variablesWithoutQuerySource.cursor = cursor;
+  // Method 2: BookmarkSearchTimeline endpoint (search_by_raw_query)
+  // Needs rawQuery (empty = all bookmarks) and count
+  // NOTE: querySource is NOT needed — confirmed by working Greasy Fork scripts
+  const searchQueryId = queryIds.BookmarkSearchTimeline || FALLBACK_QUERY_IDS.BookmarkSearchTimeline;
+  const searchVars: Record<string, unknown> = { rawQuery: '', count };
+  if (cursor) searchVars.cursor = cursor;
+  attempts.push({
+    queryId: searchQueryId,
+    operationName: 'BookmarkSearchTimeline',
+    variables: searchVars,
+    label: 'BookmarkSearchTimeline',
+  });
+  // Add alternative search IDs
+  for (const altId of ALTERNATIVE_SEARCH_IDS) {
+    if (altId !== searchQueryId) {
+      attempts.push({
+        queryId: altId,
+        operationName: 'BookmarkSearchTimeline',
+        variables: { ...searchVars },
+        label: `Search alt (${altId.substring(0, 8)})`,
+      });
+    }
   }
 
   let lastError: Error | null = null;
 
-  for (const queryId of bookmarkQueryIds) {
-    // Determine the operation name:
-    // - If the queryId was discovered as BookmarkSearchTimeline, use that name
-    // - If it was discovered as Bookmarks (old), use that name  
-    // - For the fallback ID, use BookmarkSearchTimeline
-    let operationName = 'BookmarkSearchTimeline';
-    if (queryId === queryIds.Bookmarks && queryId !== queryIds.BookmarkSearchTimeline) {
-      operationName = 'Bookmarks'; // Only use old name if this is explicitly the old Bookmarks ID
-    }
-    
-    // Try first WITH querySource, then WITHOUT (for compatibility)
-    const variableSets = [
-      { vars: variablesWithQuerySource, label: 'with querySource' },
-      { vars: variablesWithoutQuerySource, label: 'without querySource' },
-    ];
+  for (const attempt of attempts) {
+    try {
+      console.log(`[x-cookie-api] Trying ${attempt.queryId}/${attempt.operationName} (${attempt.label})`);
+      const result = await cookieFetch<any>(
+        `/${attempt.queryId}/${attempt.operationName}`,
+        cookies,
+        {
+          method: 'GET',
+          params: {
+            variables: JSON.stringify(attempt.variables),
+            features: JSON.stringify(BOOKMARKS_FEATURES),
+            // NOTE: No fieldToggles — not required by X API
+          },
+        }
+      );
 
-    for (const { vars, label } of variableSets) {
-      try {
-        console.log(`[x-cookie-api] Trying ${queryId}/${operationName} (${label})`);
-        const result = await cookieFetch<any>(
-          `/${queryId}/${operationName}`,
-          cookies,
-          {
-            method: 'GET',
-            params: {
-              variables: JSON.stringify(vars),
-              features: JSON.stringify(BOOKMARKS_FEATURES),
-              fieldToggles: JSON.stringify(BOOKMARKS_FIELD_TOGGLES),
-            },
-          }
-        );
+      // Check if response has the expected structure
+      // Bookmarks: data.viewer.bookmarks_timeline.timeline
+      // BookmarkSearchTimeline: data.search_by_raw_query.bookmarks_search_timeline.timeline
+      const hasExpectedStructure =
+        result?.data?.viewer?.bookmarks_timeline !== undefined ||
+        result?.data?.search_by_raw_query?.bookmarks_search_timeline !== undefined;
 
-        // Check if response has the expected structure
-        // New API: data.search_by_raw_query.bookmarks_search_timeline.timeline
-        // Old API: data.viewer.bookmarks_timeline.timeline
-        const hasExpectedStructure =
-          result?.data?.search_by_raw_query?.bookmarks_search_timeline !== undefined ||
-          result?.data?.viewer?.bookmarks_timeline !== undefined;
+      if (hasExpectedStructure) {
+        console.log(`[x-cookie-api] Success with ${attempt.label}`);
+        return parseBookmarksResponse(result);
+      }
 
-        if (hasExpectedStructure) {
-          // Cache this working query ID and variable set
-          cachedQueryIds.BookmarkSearchTimeline = queryId;
-          console.log(`[x-cookie-api] Success with ${queryId}/${operationName} (${label})`);
-          return parseBookmarksResponse(result);
-        }
+      // Log unexpected but valid responses for debugging
+      if (result?.data) {
+        const dataKeys = Object.keys(result.data);
+        console.warn(`[x-cookie-api] Response has data but unexpected structure. Keys: ${dataKeys.join(',')}. Full:`, JSON.stringify(result).substring(0, 800));
 
-        // Log unexpected but valid responses for debugging
-        if (result?.data) {
-          const dataKeys = Object.keys(result.data);
-          console.warn(`[x-cookie-api] Response has data but unexpected structure. Keys: ${dataKeys.join(',')}. Full:`, JSON.stringify(result).substring(0, 500));
-          
-          // Try to parse anyway — maybe the structure is slightly different
-          const parsed = parseBookmarksResponse(result);
-          if (parsed.data.length > 0) {
-            cachedQueryIds.BookmarkSearchTimeline = queryId;
-            console.log(`[x-cookie-api] Parsed ${parsed.data.length} bookmarks from unexpected structure`);
-            return parsed;
-          }
+        // Try to parse anyway — maybe the structure is slightly different
+        const parsed = parseBookmarksResponse(result);
+        if (parsed.data.length > 0) {
+          console.log(`[x-cookie-api] Parsed ${parsed.data.length} bookmarks from unexpected structure`);
+          return parsed;
         }
-        
-        // If we get a response but it doesn't have the expected structure
-        lastError = new Error(`Unexpected response structure for query ID ${queryId} (${label}). Response keys: ${result ? Object.keys(result).join(',') : 'none'}`);
-        console.warn(`[x-cookie-api] Unexpected response for ${queryId}/${operationName} (${label}):`, JSON.stringify(result).substring(0, 300));
-      } catch (error) {
-        lastError = error instanceof Error ? error : new Error(String(error));
-        
-        // If it's a 401/403, the cookies are invalid - no point trying other combinations
-        if (lastError.message.includes('Cookie authentication failed') || 
-            lastError.message.includes('cookies may have expired')) {
-          console.error(`[x-cookie-api] Authentication failed (${label}):`, lastError.message);
-          throw lastError;
-        }
-        // 404 means query ID is wrong
-        if (lastError.message.includes('404') || lastError.message.includes('Query not found')) {
-          console.warn(`[x-cookie-api] Query ID ${queryId} not found (404) (${label}), trying next...`);
-          break; // Skip to next queryId, no point trying different variables
-        }
-        // 422 GRAPHQL_VALIDATION_FAILED — variables/schema mismatch, try the OTHER variable set
-        if (lastError.message.includes('422') || lastError.message.includes('GRAPHQL_VALIDATION_FAILED')) {
-          console.warn(`[x-cookie-api] GraphQL validation failed for ${queryId}/${operationName} (${label}), trying alternative variables...`);
-          continue; // Try the next variable set
-        }
-        // For other errors, try next variable set
-        console.warn(`[x-cookie-api] Error for ${queryId}/${operationName} (${label}):`, lastError.message);
+      }
+
+      // If we get a response but it doesn't have the expected structure
+      lastError = new Error(`Unexpected response structure for ${attempt.label}. Response keys: ${result ? Object.keys(result).join(',') : 'none'}`);
+      console.warn(`[x-cookie-api] Unexpected response for ${attempt.label}:`, JSON.stringify(result).substring(0, 500));
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+
+      // If it's a 401/403, the cookies are invalid - no point trying other combinations
+      if (lastError.message.includes('Cookie authentication failed') ||
+          lastError.message.includes('cookies may have expired')) {
+        console.error(`[x-cookie-api] Authentication failed (${attempt.label}):`, lastError.message);
+        throw lastError;
+      }
+      // 422 GRAPHQL_VALIDATION_FAILED — variables/schema mismatch, try next
+      if (lastError.message.includes('422') || lastError.message.includes('GRAPHQL_VALIDATION_FAILED')) {
+        console.warn(`[x-cookie-api] GraphQL validation failed for ${attempt.label}, trying next...`);
         continue;
       }
+      // For other errors (404, etc.), try next attempt
+      console.warn(`[x-cookie-api] Error for ${attempt.label}:`, lastError.message);
+      continue;
     }
   }
 
-  throw lastError || new Error('All bookmark query IDs failed. The X API query IDs may have changed. Your cookies may also need refreshing — try reconnecting your X account.');
+  throw lastError || new Error('All bookmark endpoints failed. The X API query IDs may have changed. Try reconnecting your X account with fresh cookies.');
 }
 
 /**
