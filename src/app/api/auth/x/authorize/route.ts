@@ -57,8 +57,19 @@ export async function GET(request: NextRequest) {
     }
 
     // Build the redirect URI for the callback
-    const callbackUrl = new URL('/api/auth/x/callback', request.url);
-    const redirectUri = callbackUrl.toString();
+    // Prefer the configured env var, then the request origin, then construct from URL
+    const configuredRedirectUri = process.env.X_OAUTH_REDIRECT_URI;
+    const requestOrigin = request.headers.get('host');
+    const protocol = request.headers.get('x-forwarded-proto') || 'https';
+    const redirectUri = configuredRedirectUri ||
+      (requestOrigin ? `${protocol}://${requestOrigin}/api/auth/x/callback` : undefined);
+
+    if (!redirectUri) {
+      const errorUrl = new URL('/', request.url);
+      errorUrl.searchParams.set('error', 'x_oauth_no_redirect');
+      errorUrl.searchParams.set('error_detail', 'Could not determine OAuth redirect URI. Set X_OAUTH_REDIRECT_URI environment variable.');
+      return NextResponse.redirect(errorUrl);
+    }
 
     // Generate PKCE pair and authorization URL directly in Next.js
     const pkce = generatePKCEPair();

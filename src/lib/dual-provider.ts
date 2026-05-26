@@ -708,12 +708,19 @@ export async function syncBookmarksDual(userId: string): Promise<SyncResult> {
   if (cookies) triedMethods.push('Cookie-based X GraphQL API');
   if (twikitAuthed) triedMethods.push('Twikit service');
 
-  const guidance = cookies
-    ? 'If you used cookie-based auth, your cookies may have expired. Please reconnect your X account or try OAuth 2.0.'
-    : 'Try connecting your X account with OAuth 2.0 or cookies to enable sync.';
+  let guidance: string;
+  if (triedMethods.length === 0) {
+    guidance = 'No sync providers are available. Please connect your X account using OAuth 2.0 (recommended) or cookies.';
+  } else if (cookies && !accessToken) {
+    guidance = 'Cookie authentication failed. Your cookies may have expired — please reconnect your X account. OAuth 2.0 is recommended for reliability.';
+  } else if (accessToken && !cookies) {
+    guidance = 'OAuth 2.0 token may be expired or lacks required scopes (bookmark.read, users.read). Try reconnecting your X account.';
+  } else {
+    guidance = 'All available methods failed. Try reconnecting your X account. OAuth 2.0 is recommended for reliability.';
+  }
 
   throw new Error(
-    `All sync providers failed. Tried: ${triedMethods.join(', ') || 'no providers available'}. ` +
+    `All sync providers failed. Tried: ${triedMethods.join(', ') || 'none available'}. ` +
     `${guidance} ` +
     `Details: ${errors.join('; ')}`
   );
