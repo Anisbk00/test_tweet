@@ -391,6 +391,7 @@ export function transformTwikitPost(post: TwikitPost) {
     xAuthorAvatar: post.author?.avatar_url || null,
     mediaUrls: JSON.stringify(post.media?.map((m) => m.url) || []),
     mediaTypes: JSON.stringify(post.media?.map((m) => m.type) || []),
+    previewUrls: JSON.stringify(post.media?.map((m) => m.preview_url || m.url) || []),
     replyCount: post.metrics?.replies || 0,
     repostCount: post.metrics?.reposts || 0,
     likeCount: post.metrics?.likes || 0,

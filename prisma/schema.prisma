@@ -80,6 +80,7 @@ model Bookmark {
   content         String
   mediaUrls       String   @default("[]") // JSON array of URLs
   mediaTypes      String   @default("[]") // JSON array: photo, video, gif
+  previewUrls     String   @default("[]") // JSON array of thumbnail/preview URLs (for video thumbnails)
   replyCount      Int      @default(0)
   repostCount     Int      @default(0)
   likeCount       Int      @default(0)

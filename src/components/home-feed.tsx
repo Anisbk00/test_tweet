@@ -60,7 +60,30 @@ export function HomeFeed() {
       }
     } catch (err: any) {
       console.error('Sync failed:', err);
-      toast.error(err.message || 'Sync failed. Make sure Twitter is connected.');
+      // If sync is stuck (409), try resetting and retrying once
+      if (err.message?.includes('Sync already in progress')) {
+        try {
+          toast.info('Resetting stuck sync lock...');
+          await api.sync.reset();
+          const result = await api.sync.trigger();
+          try {
+            const res = await api.bookmarks.list({ limit: '100' });
+            const bookmarksList = res?.bookmarks || res?.data || [];
+            setBookmarks(Array.isArray(bookmarksList) ? bookmarksList : []);
+          } catch (reloadErr) {
+            console.warn('Failed to reload bookmarks after retry:', reloadErr);
+          }
+          if (result?.success || result?.syncedCount > 0) {
+            toast.success(`Synced ${result.syncedCount || 0} bookmarks`);
+          } else {
+            toast.info('No new bookmarks to sync');
+          }
+        } catch (retryErr: any) {
+          toast.error(retryErr.message || 'Sync retry failed');
+        }
+      } else {
+        toast.error(err.message || 'Sync failed. Make sure Twitter is connected.');
+      }
     }
     setIsSyncing(false);
   }, [setBookmarks]);

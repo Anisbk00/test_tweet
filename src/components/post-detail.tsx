@@ -1,9 +1,10 @@
 'use client';
 
+import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useAppStore, type Bookmark as BookmarkType } from '@/lib/store';
 import { formatCount, formatDate, parseJSON, parseMediaUrls, getInitials, getAvatarColor } from '@/lib/utils';
-import { X, Heart, MessageCircle, Repeat2, Eye, Bookmark, Share, ExternalLink, Play, Calendar, Tag } from 'lucide-react';
+import { X, Heart, MessageCircle, Repeat2, Eye, Bookmark, Share, ExternalLink, Play, Calendar, Tag, Volume2, VolumeX } from 'lucide-react';
 
 export function PostDetail() {
   const { selectedBookmark, setDetailOpen, setSelectedBookmark } = useAppStore();
@@ -13,6 +14,7 @@ export function PostDetail() {
   const bookmark = selectedBookmark;
   const mediaUrls = parseMediaUrls(bookmark.mediaUrls);
   const mediaTypes = parseJSON<string[]>(bookmark.mediaTypes, []);
+  const previewUrls = parseMediaUrls(bookmark.previewUrls || '[]');
   const tags = Array.isArray(bookmark.tags) ? bookmark.tags : [];
   const collections = Array.isArray(bookmark.collections) ? bookmark.collections : [];
 
@@ -85,23 +87,53 @@ export function PostDetail() {
           {/* Media */}
           {mediaUrls.length > 0 && (
             <div className="px-5 pb-4 space-y-2">
-              {mediaUrls.map((url, i) => (
-                <div key={i} className="relative rounded-2xl overflow-hidden bg-secondary">
-                  <img
-                    src={url}
-                    alt=""
-                    className="w-full object-cover max-h-80"
-                    loading="lazy"
-                  />
-                  {mediaTypes[i] === 'video' && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/20">
-                      <div className="w-14 h-14 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
-                        <Play className="w-7 h-7 text-white fill-white ml-1" />
-                      </div>
+              {mediaUrls.map((url, i) => {
+                const type = mediaTypes[i] || 'photo';
+                const previewUrl = previewUrls[i];
+
+                if (type === 'video') {
+                  return (
+                    <div key={i} className="relative rounded-2xl overflow-hidden bg-secondary">
+                      <video
+                        src={url}
+                        poster={previewUrl || undefined}
+                        controls
+                        playsInline
+                        preload="metadata"
+                        className="w-full max-h-96 object-contain bg-black"
+                      />
                     </div>
-                  )}
-                </div>
-              ))}
+                  );
+                }
+
+                if (type === 'gif') {
+                  return (
+                    <div key={i} className="relative rounded-2xl overflow-hidden bg-secondary">
+                      <video
+                        src={url}
+                        poster={previewUrl || undefined}
+                        autoPlay
+                        loop
+                        muted
+                        playsInline
+                        className="w-full max-h-80 object-cover"
+                      />
+                    </div>
+                  );
+                }
+
+                // Photo
+                return (
+                  <div key={i} className="relative rounded-2xl overflow-hidden bg-secondary">
+                    <img
+                      src={url}
+                      alt=""
+                      className="w-full object-cover max-h-80"
+                      loading="lazy"
+                    />
+                  </div>
+                );
+              })}
             </div>
           )}
 

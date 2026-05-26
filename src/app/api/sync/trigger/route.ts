@@ -18,16 +18,29 @@ export async function POST(request: NextRequest) {
 
     const userId = session.userId;
 
-    // Check if already syncing
+    // Check if already syncing (with auto-expire for stale locks)
     const syncStatus = await db.syncStatus.findUnique({
       where: { userId },
     });
 
     if (syncStatus?.isSyncing) {
-      return NextResponse.json(
-        { error: 'Sync already in progress' },
-        { status: 409 }
-      );
+      // Auto-expire stale sync locks older than 10 minutes
+      const staleThreshold = 10 * 60 * 1000; // 10 minutes
+      const updatedAt = syncStatus.updatedAt?.getTime() || 0;
+      const isStale = Date.now() - updatedAt > staleThreshold;
+
+      if (isStale) {
+        console.warn(`[sync/trigger] Clearing stale sync lock for user ${userId} (stale since ${new Date(updatedAt).toISOString()})`);
+        await db.syncStatus.update({
+          where: { userId },
+          data: { isSyncing: false, lastError: 'Previous sync timed out' },
+        });
+      } else {
+        return NextResponse.json(
+          { error: 'Sync already in progress' },
+          { status: 409 }
+        );
+      }
     }
 
     // Get user's X connection status

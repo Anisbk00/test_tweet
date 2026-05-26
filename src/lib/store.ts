@@ -23,6 +23,7 @@ export interface Bookmark {
   content: string;
   mediaUrls: string;
   mediaTypes: string;
+  previewUrls: string;
   replyCount: number;
   repostCount: number;
   likeCount: number;

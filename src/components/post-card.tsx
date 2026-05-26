@@ -4,11 +4,23 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useAppStore, type Bookmark as BookmarkType } from '@/lib/store';
 import { formatCount, formatDate, parseJSON, parseMediaUrls, getInitials, getAvatarColor } from '@/lib/utils';
-import { Heart, MessageCircle, Repeat2, Eye, Bookmark, Play, ExternalLink, MoreHorizontal } from 'lucide-react';
+import { Heart, MessageCircle, Repeat2, Eye, Bookmark, Play, ExternalLink, MoreHorizontal, Volume2, VolumeX } from 'lucide-react';
 
 interface PostCardProps {
   bookmark: BookmarkType;
   variant?: 'masonry' | 'list';
+}
+
+/**
+ * Get the best display URL for an image tag.
+ * For videos/GIFs, use the preview (thumbnail) URL.
+ * For photos, use the direct media URL.
+ */
+function getDisplayUrl(mediaUrl: string, previewUrl: string | undefined, mediaType: string): string {
+  if ((mediaType === 'video' || mediaType === 'gif') && previewUrl) {
+    return previewUrl;
+  }
+  return mediaUrl;
 }
 
 export function PostCard({ bookmark, variant = 'masonry' }: PostCardProps) {
@@ -16,6 +28,7 @@ export function PostCard({ bookmark, variant = 'masonry' }: PostCardProps) {
   const [isHovered, setIsHovered] = useState(false);
   const mediaUrls = parseMediaUrls(bookmark.mediaUrls);
   const mediaTypes = parseJSON<string[]>(bookmark.mediaTypes, []);
+  const previewUrls = parseMediaUrls(bookmark.previewUrls || '[]');
   const tags = Array.isArray(bookmark.tags) ? bookmark.tags : [];
   const collections = Array.isArray(bookmark.collections) ? bookmark.collections : [];
   const hasMedia = mediaUrls.length > 0;
@@ -56,8 +69,8 @@ export function PostCard({ bookmark, variant = 'masonry' }: PostCardProps) {
               <div className="mt-2 flex gap-1">
                 {mediaUrls.slice(0, 3).map((url, i) => (
                   <div key={i} className="relative w-20 h-20 rounded-lg overflow-hidden bg-secondary">
-                    <img src={url} alt="" className="w-full h-full object-cover" loading="lazy" />
-                    {i === 0 && firstMediaType === 'video' && (
+                    <img src={getDisplayUrl(url, previewUrls[i], mediaTypes[i] || 'photo')} alt="" className="w-full h-full object-cover" loading="lazy" />
+                    {mediaTypes[i] === 'video' && (
                       <div className="absolute inset-0 flex items-center justify-center bg-black/30">
                         <Play className="w-5 h-5 text-white fill-white" />
                       </div>
@@ -98,7 +111,7 @@ export function PostCard({ bookmark, variant = 'masonry' }: PostCardProps) {
         <div className="relative overflow-hidden">
           <div className={`w-full ${firstMediaType === 'video' ? 'aspect-video' : firstMediaType === 'gif' ? 'aspect-square' : 'aspect-[4/3]'}`}>
             <img
-              src={mediaUrls[0]}
+              src={getDisplayUrl(mediaUrls[0], previewUrls[0], firstMediaType)}
               alt=""
               className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
               loading="lazy"

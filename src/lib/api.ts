@@ -34,6 +34,11 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
       throw new Error(`Authentication required: ${errorMsg}. Please log in again.`);
     }
 
+    // Special handling for 409 Conflict (sync already in progress)
+    if (res.status === 409) {
+      throw new Error(`${errorMsg} — try again in a moment or reset the sync lock.`);
+    }
+
     // Special handling for 500 from sync endpoints — surface the detailed error
     if (res.status === 500 && path.includes('/sync')) {
       throw new Error(`Sync failed: ${errorMsg}`);
@@ -197,4 +202,5 @@ export const sync = {
     provider?: string;
   }>('/sync/trigger', { method: 'POST' }),
   diagnose: () => apiFetch<{ diagnosis: Record<string, unknown> }>('/sync/diagnose'),
+  reset: () => apiFetch<{ message: string; wasStuck?: boolean }>('/sync/reset', { method: 'POST' }),
 };

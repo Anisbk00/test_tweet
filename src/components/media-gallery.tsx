@@ -26,8 +26,10 @@ export function MediaGallery() {
     return mediaBookmarks.flatMap((b) => {
       const urls = parseMediaUrls(b.mediaUrls);
       const types = parseJSON<string[]>(b.mediaTypes, []);
+      const previewUrls = parseMediaUrls(b.previewUrls || '[]');
       return urls.map((url, i) => ({
         url,
+        previewUrl: previewUrls[i],
         type: types[i] || 'photo',
         bookmark: b,
       }));
@@ -108,12 +110,21 @@ export function MediaGallery() {
               onClick={() => handleItemClick(item.bookmark.id)}
               className="group relative aspect-square overflow-hidden cursor-pointer bg-secondary/30"
             >
-              <img
-                src={item.url}
-                alt="Bookmark media"
-                className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
-                loading="lazy"
-              />
+              {item.type === 'video' || item.type === 'gif' ? (
+                <img
+                  src={item.previewUrl || item.url}
+                  alt="Bookmark media"
+                  className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
+                  loading="lazy"
+                />
+              ) : (
+                <img
+                  src={item.url}
+                  alt="Bookmark media"
+                  className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
+                  loading="lazy"
+                />
+              )}
 
               {/* Hover overlay */}
               <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors duration-200 flex items-center justify-center">
