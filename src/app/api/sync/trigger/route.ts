@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
-import { twikitLoginWithCookies, twikitGetBookmarks, transformTwikitPost } from '@/lib/twitter';
+import { syncBookmarksDual } from '@/lib/dual-provider';
 
+/**
+ * POST /api/sync/trigger
+ *
+ * Trigger a bookmark sync using the dual-provider service.
+ * Updated to use direct X API v2 + Twikit fallback.
+ */
 export async function POST(request: NextRequest) {
   try {
     const session = await getSession(request);
@@ -24,25 +30,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get user's Twitter cookies
+    // Get user's X connection status
     const user = await db.user.findUnique({
       where: { id: userId },
-      select: { xCookies: true, xConnected: true, xUsername: true },
+      select: { xConnected: true, xAuthMethod: true },
     });
 
-    if (!user?.xConnected || !user?.xCookies) {
+    if (!user?.xConnected) {
       return NextResponse.json(
-        { error: 'Twitter not connected' },
-        { status: 400 }
-      );
-    }
-
-    let cookies: Record<string, string>;
-    try {
-      cookies = JSON.parse(user.xCookies);
-    } catch {
-      return NextResponse.json(
-        { error: 'Invalid Twitter cookies' },
+        { error: 'X/Twitter not connected' },
         { status: 400 }
       );
     }
@@ -55,55 +51,15 @@ export async function POST(request: NextRequest) {
     });
 
     try {
-      // Login to twikit-service with stored cookies
-      await twikitLoginWithCookies(userId, cookies as any, user.xUsername || undefined);
+      // Use the dual-provider sync service
+      const result = await syncBookmarksDual(userId);
 
-      let allSynced = 0;
-      let cursor: string | undefined = undefined;
-      let hasMore = true;
-      let pageCount = 0;
-      const maxPages = 10;
-
-      while (hasMore && pageCount < maxPages) {
-        const result = await twikitGetBookmarks(userId, cursor, 50);
-
-        if (!result.data || result.data.length === 0) break;
-
-        for (const post of result.data) {
-          try {
-            const transformed = transformTwikitPost(post);
-            await db.bookmark.upsert({
-              where: { xPostId: transformed.xPostId },
-              update: {
-                content: transformed.content,
-                xAuthorId: transformed.xAuthorId,
-                xAuthorName: transformed.xAuthorName,
-                xAuthorUsername: transformed.xAuthorUsername,
-                xAuthorAvatar: transformed.xAuthorAvatar,
-                mediaUrls: transformed.mediaUrls,
-                mediaTypes: transformed.mediaTypes,
-                replyCount: transformed.replyCount,
-                repostCount: transformed.repostCount,
-                likeCount: transformed.likeCount,
-                viewCount: transformed.viewCount,
-                bookmarkCount: transformed.bookmarkCount,
-                postedAt: transformed.postedAt,
-                isBookmarked: true,
-              },
-              create: {
-                userId,
-                ...transformed,
-              },
-            });
-            allSynced++;
-          } catch (err) {
-            console.error(`Failed to sync post ${post.id}:`, err);
-          }
-        }
-
-        hasMore = result.has_more;
-        cursor = result.cursor || undefined;
-        pageCount++;
+      // Update the user's auth method based on what was actually used
+      if (user.xAuthMethod !== result.provider) {
+        await db.user.update({
+          where: { id: userId },
+          data: { xAuthMethod: result.provider },
+        });
       }
 
       // Update sync status
@@ -112,10 +68,10 @@ export async function POST(request: NextRequest) {
         data: {
           isSyncing: false,
           lastSyncAt: new Date(),
-          lastBookmarkId: cursor || syncStatus?.lastBookmarkId,
-          syncCount: (syncStatus?.syncCount || 0) + allSynced,
+          syncCount: (syncStatus?.syncCount || 0) + result.syncedCount,
           errorCount: 0,
-          lastError: null,
+          lastError: result.errors.length > 0 ? result.errors.join('; ') : null,
+          provider: result.provider,
         },
       });
 
@@ -124,15 +80,21 @@ export async function POST(request: NextRequest) {
         data: {
           userId,
           type: 'sync_complete',
-          metadata: JSON.stringify({ syncedCount: allSynced, pages: pageCount }),
+          metadata: JSON.stringify({
+            syncedCount: result.syncedCount,
+            pages: result.pages,
+            provider: result.provider,
+            hasMore: result.hasMore,
+          }),
         },
       });
 
       return NextResponse.json({
         success: true,
-        syncedCount: allSynced,
-        pages: pageCount,
-        hasMore,
+        syncedCount: result.syncedCount,
+        pages: result.pages,
+        hasMore: result.hasMore,
+        provider: result.provider,
       });
     } catch (syncError) {
       await db.syncStatus.update({

@@ -1,34 +1,39 @@
 /**
- * Twitter/X service proxy - communicates with the Python dual-provider service on port 3031.
+ * Twitter/X service proxy - communicates with the Python Twikit service.
  *
- * The service supports two providers:
- * 1. X API v2 (primary) - OAuth 2.0 PKCE flow with access/refresh tokens
- * 2. Twikit (fallback) - Cookie-based authentication
+ * The Python service is OPTIONAL for Vercel deployment. When TWIKIT_SERVICE_URL
+ * is not set, only the direct X API v2 client (src/lib/x-api.ts) is used.
  *
- * The service returns bookmark data in this format:
- * {
- *   data: [{
- *     id: string,
- *     content: string,
- *     author: { id, name, username, avatar_url },
- *     media: [{ url, type, preview_url }],
- *     metrics: { replies, reposts, likes, views, bookmarks },
- *     posted_at: string,
- *     created_at: string,
- *     provider: 'x_api' | 'twikit'
- *   }],
- *   cursor: string | null,
- *   has_more: boolean,
- *   count: number
- * }
+ * When available, the service provides:
+ * 1. Twikit (cookie-based auth) - fallback for X API v2
+ * 2. Additional endpoints like media search
+ *
+ * Configuration:
+ * - TWIKIT_SERVICE_URL: Full URL of the Python service (e.g., "https://twikit-service.railway.app")
+ *   If not set, Twikit features are unavailable.
  */
 
-const SERVICE_PORT = 3031;
-const SERVICE_BASE = `http://127.0.0.1:${SERVICE_PORT}`;
+// ============================================================
+// Service Connection
+// ============================================================
+
+function getServiceUrl(): string | null {
+  const url = process.env.TWIKIT_SERVICE_URL;
+  if (!url) return null;
+  return url.replace(/\/$/, ''); // Remove trailing slash
+}
+
+function isServiceAvailable(): boolean {
+  return !!getServiceUrl();
+}
 
 async function serviceFetch<T>(path: string, options?: RequestInit): Promise<T> {
-  // Always called from Next.js server-side API routes, so use direct localhost
-  const url = `${SERVICE_BASE}${path}`;
+  const baseUrl = getServiceUrl();
+  if (!baseUrl) {
+    throw new Error('Twikit service is not configured. Set TWIKIT_SERVICE_URL environment variable.');
+  }
+
+  const url = `${baseUrl}${path}`;
 
   // Add abort controller with 15s timeout to prevent hanging
   const controller = new AbortController();
@@ -56,7 +61,29 @@ async function serviceFetch<T>(path: string, options?: RequestInit): Promise<T> 
 }
 
 // ============================================================
-// Twikit Auth (Cookie-based) — existing functions kept as-is
+// Service Health Check
+// ============================================================
+
+export async function twikitHealthCheck(): Promise<{
+  status: string;
+  service: string;
+  version: string;
+} | null> {
+  if (!isServiceAvailable()) return null;
+
+  try {
+    return await serviceFetch('/health');
+  } catch {
+    return null;
+  }
+}
+
+export function isTwikitAvailable(): boolean {
+  return isServiceAvailable();
+}
+
+// ============================================================
+// Twikit Auth (Cookie-based)
 // ============================================================
 
 export async function twikitLoginWithCookies(
@@ -92,14 +119,9 @@ export async function twikitLogout(userId: string) {
 }
 
 // ============================================================
-// X API v2 Auth (OAuth 2.0 PKCE)
+// X API v2 Auth via Python Service (OAuth 2.0 PKCE)
 // ============================================================
 
-/**
- * Login to the Python service using OAuth 2.0 tokens obtained from X.
- * This stores the tokens in the Python service's session so it can make
- * API calls on behalf of the user.
- */
 export async function xApiLoginWithOAuth2(
   userId: string,
   accessToken: string,
@@ -128,11 +150,6 @@ export async function xApiLoginWithOAuth2(
   });
 }
 
-/**
- * Get the OAuth 2.0 authorization URL for X.
- * Returns the URL to redirect the user to, along with the PKCE code_verifier
- * and state that must be stored securely for the callback.
- */
 export async function xApiGetOAuth2AuthorizeUrl(
   redirectUri?: string,
   scope?: string
@@ -150,12 +167,6 @@ export async function xApiGetOAuth2AuthorizeUrl(
   });
 }
 
-/**
- * Exchange the OAuth 2.0 authorization code for tokens.
- * Called after the user authorizes the app on X and is redirected back.
- * Returns access_token, refresh_token, expires_in but NOT user info.
- * User info is obtained by calling xApiLoginWithOAuth2 after this.
- */
 export async function xApiOAuth2Callback(
   code: string,
   codeVerifier: string,
@@ -178,9 +189,6 @@ export async function xApiOAuth2Callback(
   });
 }
 
-/**
- * Refresh an expired OAuth 2.0 access token using the refresh token.
- */
 export async function xApiRefreshOAuth2Token(refreshToken: string) {
   return serviceFetch<{
     success: boolean;
@@ -192,11 +200,16 @@ export async function xApiRefreshOAuth2Token(refreshToken: string) {
   });
 }
 
-/**
- * Get the current auth configuration from the Python service.
- * Returns which auth methods are available and configured.
- */
 export async function xApiGetAuthConfig() {
+  if (!isServiceAvailable()) {
+    return {
+      has_bearer_token: !!process.env.X_API_BEARER_TOKEN,
+      has_oauth1_credentials: !!process.env.X_API_KEY && !!process.env.X_ACCESS_TOKEN,
+      has_oauth2_credentials: !!process.env.X_CLIENT_ID,
+      available_methods: ['x_api_direct'],
+    };
+  }
+
   return serviceFetch<{
     has_bearer_token: boolean;
     has_oauth1_credentials: boolean;
@@ -206,7 +219,7 @@ export async function xApiGetAuthConfig() {
 }
 
 // ============================================================
-// Bookmarks (dual-provider)
+// Data Types (shared between X API direct and Twikit)
 // ============================================================
 
 export interface TwikitPost {
@@ -243,12 +256,10 @@ export interface TwikitPaginatedResponse {
   provider?: 'x_api' | 'twikit';
 }
 
-/**
- * Get bookmarks from the Python service using dual-provider support.
- * The service automatically selects the best available provider:
- * - X API v2 (primary) if OAuth 2.0 tokens are available
- * - Twikit (fallback) if cookies are available
- */
+// ============================================================
+// Bookmarks (via Twikit service)
+// ============================================================
+
 export async function twikitGetBookmarks(
   userId: string,
   cursor?: string,
@@ -277,7 +288,7 @@ export async function twikitGetBookmarkSyncStatus(userId: string) {
 }
 
 // ============================================================
-// Timeline
+// Timeline (via Twikit service)
 // ============================================================
 
 export async function twikitGetTimeline(
@@ -294,7 +305,7 @@ export async function twikitGetTimeline(
 }
 
 // ============================================================
-// Media
+// Media (via Twikit service)
 // ============================================================
 
 export async function twikitGetBookmarkMedia(
@@ -311,7 +322,7 @@ export async function twikitGetBookmarkMedia(
 }
 
 // ============================================================
-// Lists
+// Lists (via Twikit service)
 // ============================================================
 
 export async function twikitGetLists(userId: string): Promise<TwikitPaginatedResponse> {
@@ -333,7 +344,7 @@ export async function twikitGetListTweets(
 }
 
 // ============================================================
-// Network
+// Network (via Twikit service)
 // ============================================================
 
 export async function twikitGetFollowing(
@@ -364,18 +375,6 @@ export async function twikitGetFollowers(
   });
   if (cursor) params.set('cursor', cursor);
   return serviceFetch<TwikitPaginatedResponse>(`/network/followers?${params}`);
-}
-
-// ============================================================
-// Health
-// ============================================================
-
-export async function twikitHealthCheck(): Promise<{
-  status: string;
-  service: string;
-  version: string;
-}> {
-  return serviceFetch('/health');
 }
 
 // ============================================================

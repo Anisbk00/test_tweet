@@ -1,19 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession, verifyToken } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { xApiGetOAuth2AuthorizeUrl } from '@/lib/twitter';
+import { generatePKCEPair, getOAuth2AuthorizeUrl, hasOAuth2Credentials } from '@/lib/x-api';
 
 /**
  * GET /api/auth/x/authorize
  *
- * Initiates the X OAuth 2.0 PKCE flow:
+ * Initiates the X OAuth 2.0 PKCE flow directly from Next.js.
+ * No Python service dependency — works on Vercel.
+ *
+ * Flow:
  * 1. Authenticates the user via Authorization header or ?token query param
- * 2. Generates a PKCE code_verifier + state via the Python service
+ * 2. Generates a PKCE code_verifier + state directly in Next.js
  * 3. Stores code_verifier and state in secure HttpOnly cookies
  * 4. Redirects the user to X's authorization page
  */
 export async function GET(request: NextRequest) {
   try {
+    // Check if OAuth 2.0 is configured
+    if (!hasOAuth2Credentials()) {
+      const errorUrl = new URL('/', request.url);
+      errorUrl.searchParams.set('error', 'x_oauth_not_configured');
+      errorUrl.searchParams.set('error_detail', 'X OAuth 2.0 is not configured. Set X_CLIENT_ID and X_CLIENT_SECRET environment variables.');
+      return NextResponse.redirect(errorUrl);
+    }
+
     // Try to authenticate the user - either via Authorization header or query param
     let userId: string | null = null;
 
@@ -49,13 +60,14 @@ export async function GET(request: NextRequest) {
     const callbackUrl = new URL('/api/auth/x/callback', request.url);
     const redirectUri = callbackUrl.toString();
 
-    // Get the authorization URL + PKCE code_verifier + state from the Python service
-    const authData = await xApiGetOAuth2AuthorizeUrl(redirectUri);
+    // Generate PKCE pair and authorization URL directly in Next.js
+    const pkce = generatePKCEPair();
+    const authorizeUrl = getOAuth2AuthorizeUrl(pkce, redirectUri);
 
-    // Store code_verifier and state in secure HttpOnly cookies
-    const response = NextResponse.redirect(authData.authorization_url);
+    // Store PKCE data and user context in secure HttpOnly cookies
+    const response = NextResponse.redirect(authorizeUrl);
 
-    response.cookies.set('x_oauth2_code_verifier', authData.code_verifier, {
+    response.cookies.set('x_oauth2_code_verifier', pkce.code_verifier, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
@@ -63,7 +75,7 @@ export async function GET(request: NextRequest) {
       maxAge: 60 * 10, // 10 minutes
     });
 
-    response.cookies.set('x_oauth2_state', authData.state, {
+    response.cookies.set('x_oauth2_state', pkce.state, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',

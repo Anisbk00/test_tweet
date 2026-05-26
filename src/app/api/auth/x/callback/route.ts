@@ -1,17 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { xApiOAuth2Callback, xApiLoginWithOAuth2 } from '@/lib/twitter';
+import { exchangeOAuth2Code, getMe } from '@/lib/x-api';
+import { isTwikitAvailable, xApiLoginWithOAuth2 } from '@/lib/twitter';
 
 /**
  * GET /api/auth/x/callback
  *
  * OAuth 2.0 callback handler for X.
+ * Works directly from Next.js — no Python service dependency.
+ *
+ * Flow:
  * 1. Receives the authorization code and state from X
  * 2. Validates the state matches the one stored in the cookie
- * 3. Exchanges the code for tokens via the Python service
- * 4. Sends the tokens to the Python service session store (which also validates and gets user info)
+ * 3. Exchanges the code for tokens directly via X API v2
+ * 4. Fetches user info (x_user_id, username) using the access token
  * 5. Stores tokens in the database (User model)
- * 6. Redirects to the app with success/error
+ * 6. Optionally sends tokens to the Twikit service (if available)
+ * 7. Redirects to the app with success/error
  */
 export async function GET(request: NextRequest) {
   try {
@@ -59,39 +64,32 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(redirectUrl);
     }
 
-    // Step 1: Exchange the authorization code for tokens via the Python service
-    const tokenData = await xApiOAuth2Callback(code, codeVerifier, redirectUri);
+    // Step 1: Exchange the authorization code for tokens directly via X API v2
+    const tokenData = await exchangeOAuth2Code(code, codeVerifier, redirectUri);
 
-    // Step 2: Login with OAuth 2.0 tokens - this validates the tokens and
-    // retrieves user info (x_user_id, username) from the Python service
+    // Step 2: Get the authenticated user's info using the access token
     let xUserId = '';
     let xUsername = '';
 
     try {
-      const loginResult = await xApiLoginWithOAuth2(
-        userId,
-        tokenData.access_token,
-        tokenData.refresh_token,
-        tokenData.expires_in,
-        '', // x_user_id not yet known, Python service will fetch it
-        ''  // username not yet known, Python service will fetch it
-      );
-      xUserId = loginResult.x_user_id || '';
-      xUsername = loginResult.username || '';
-    } catch (loginErr) {
-      console.error('Failed to validate OAuth 2.0 tokens with Python service:', loginErr);
-      // Continue — we still have the tokens and can store them
+      const meResult = await getMe(tokenData.access_token);
+      if (meResult) {
+        xUserId = meResult.id;
+        xUsername = meResult.username;
+      }
+    } catch (meErr) {
+      console.error('Failed to fetch user info from X API:', meErr);
+      // Continue — we still have the tokens
     }
 
-    // Calculate the token expiration time
+    // Step 3: Store the OAuth 2.0 tokens in the database
     const expiresAt = new Date(Date.now() + tokenData.expires_in * 1000);
 
-    // Step 3: Store the OAuth 2.0 tokens in the database
     await db.user.update({
       where: { id: userId },
       data: {
         xOAuth2AccessToken: tokenData.access_token,
-        xOAuth2RefreshToken: tokenData.refresh_token,
+        xOAuth2RefreshToken: tokenData.refresh_token || '',
         xOAuth2ExpiresAt: expiresAt,
         ...(xUserId ? { xUserId } : {}),
         ...(xUsername ? { xUsername } : {}),
@@ -106,6 +104,22 @@ export async function GET(request: NextRequest) {
       update: { provider: 'x_api' },
       create: { userId, provider: 'x_api' },
     });
+
+    // Step 4: Optionally send tokens to the Twikit service (if available)
+    if (isTwikitAvailable()) {
+      try {
+        await xApiLoginWithOAuth2(
+          userId,
+          tokenData.access_token,
+          tokenData.refresh_token || '',
+          tokenData.expires_in,
+          xUserId,
+          xUsername
+        );
+      } catch (sessionErr) {
+        console.warn('Failed to send OAuth 2.0 tokens to Twikit service (non-critical):', sessionErr);
+      }
+    }
 
     // Log activity
     await db.activity.create({
@@ -123,7 +137,7 @@ export async function GET(request: NextRequest) {
     // Clear the OAuth 2.0 cookies and redirect to the app with success
     const redirectUrl = new URL('/', request.url);
     redirectUrl.searchParams.set('x_connected', 'true');
-    redirectUrl.searchParams.set('auth_method', 'x_api');
+    redirectUrl.searchParams.set('x_method', 'x_api');
 
     const response = NextResponse.redirect(redirectUrl);
 

@@ -1,38 +1,51 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { xApiGetAuthConfig } from '@/lib/twitter';
+import { hasBearerToken, hasOAuth1Credentials, hasOAuth2Credentials } from '@/lib/x-api';
+import { isTwikitAvailable, xApiGetAuthConfig } from '@/lib/twitter';
 
 /**
  * GET /api/auth/x/config
  *
  * Returns the X API configuration status:
- * - Whether OAuth 2.0 is configured
- * - Whether Twikit is available
+ * - Whether OAuth 2.0 is configured (X_CLIENT_ID + X_CLIENT_SECRET)
+ * - Whether Bearer Token is available (app-only search)
+ * - Whether OAuth 1.0a is configured (following/followers)
+ * - Whether Twikit service is available (TWIKIT_SERVICE_URL set)
  * - Available auth methods
+ *
+ * Works on Vercel — no Python service dependency.
  */
 export async function GET(request: NextRequest) {
   try {
-    // Try to get config from the Python service
-    let oauth2Enabled = false;
-    let twikitEnabled = true; // Always available as fallback
-    let availableMethods: string[] = ['twikit'];
+    const bearerAvailable = hasBearerToken();
+    const oauth1Available = hasOAuth1Credentials();
+    const oauth2Available = hasOAuth2Credentials();
+    const twikitAvailable = isTwikitAvailable();
 
-    try {
-      const config = await xApiGetAuthConfig();
-      oauth2Enabled = config.has_oauth2_credentials;
-      availableMethods = config.available_methods;
-      twikitEnabled = availableMethods.includes('twikit');
-    } catch {
-      // Python service may be down, check env vars directly
-      oauth2Enabled = !!(process.env.X_CLIENT_ID && process.env.X_CLIENT_SECRET);
-      twikitEnabled = true; // Twikit is always potentially available
+    const availableMethods: string[] = [];
+    if (oauth2Available) availableMethods.push('x_api_oauth2');
+    if (oauth1Available) availableMethods.push('x_api_oauth1');
+    if (bearerAvailable) availableMethods.push('x_api_bearer');
+    if (twikitAvailable) availableMethods.push('twikit');
+
+    // Also try to get additional info from the Twikit service if available
+    let twikitServiceDetails = null;
+    if (twikitAvailable) {
+      try {
+        twikitServiceDetails = await xApiGetAuthConfig();
+      } catch {
+        // Service may be down, that's fine
+      }
     }
 
     return NextResponse.json({
-      configured: oauth2Enabled || twikitEnabled,
-      method: oauth2Enabled ? 'x_api' : twikitEnabled ? 'twikit' : null,
-      hasOAuth2: oauth2Enabled,
-      hasTwikit: twikitEnabled,
+      configured: oauth2Available || oauth1Available || bearerAvailable || twikitAvailable,
+      method: oauth2Available ? 'x_api' : twikitAvailable ? 'twikit' : null,
+      hasOAuth2: oauth2Available,
+      hasOAuth1: oauth1Available,
+      hasBearerToken: bearerAvailable,
+      hasTwikit: twikitAvailable,
       availableMethods,
+      twikitService: twikitServiceDetails,
     });
   } catch (error) {
     console.error('X config error:', error);
@@ -41,6 +54,8 @@ export async function GET(request: NextRequest) {
         configured: false,
         method: null,
         hasOAuth2: false,
+        hasOAuth1: false,
+        hasBearerToken: false,
         hasTwikit: false,
       },
       { status: 500 }

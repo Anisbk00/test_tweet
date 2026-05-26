@@ -16,6 +16,7 @@ import {
   Cookie,
   Zap,
   Info,
+  Cloud,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -23,6 +24,8 @@ interface XConfig {
   configured: boolean;
   method: string | null;
   hasOAuth2: boolean;
+  hasOAuth1: boolean;
+  hasBearerToken: boolean;
   hasTwikit: boolean;
 }
 
@@ -42,9 +45,9 @@ export function TwitterConnect() {
     async function loadConfig() {
       try {
         const config = await api.auth.getXConfig();
-        setXConfig(config);
+        setXConfig(config as XConfig);
       } catch {
-        setXConfig({ configured: false, method: null, hasOAuth2: false, hasTwikit: true });
+        setXConfig({ configured: false, method: null, hasOAuth2: false, hasOAuth1: false, hasBearerToken: false, hasTwikit: false });
       }
       setIsLoadingConfig(false);
     }
@@ -55,7 +58,7 @@ export function TwitterConnect() {
     setError('');
     try {
       api.auth.connectXOAuth2();
-      // The page will redirect to X's OAuth page, so no further action needed
+      // The page will redirect to X's OAuth page
     } catch (err: any) {
       setError(err.message || 'Failed to initiate OAuth 2.0 flow');
     }
@@ -100,7 +103,7 @@ export function TwitterConnect() {
   };
 
   const oauth2Available = xConfig?.hasOAuth2 ?? false;
-  const twikitAvailable = xConfig?.hasTwikit ?? true;
+  const twikitAvailable = xConfig?.hasTwikit ?? false;
 
   return (
     <div className="max-w-lg mx-auto px-4 py-12">
@@ -150,7 +153,7 @@ export function TwitterConnect() {
               <CheckCircle2 className="w-5 h-5 text-emerald-400 flex-shrink-0" />
               <div className="flex-1">
                 <p className="text-sm font-medium text-emerald-400">
-                  Already connected via {user.xAuthMethod === 'x_api' ? 'X API (OAuth 2.0)' : 'Twikit (Cookies)'}
+                  Connected via {user.xAuthMethod === 'x_api' ? 'X API (OAuth 2.0)' : 'Twikit (Cookies)'}
                 </p>
                 <p className="text-xs text-muted-foreground">
                   @{user.xUsername || 'user'}
@@ -184,6 +187,20 @@ export function TwitterConnect() {
             </div>
           )}
 
+          {/* OAuth 2.0 not configured warning */}
+          {!oauth2Available && !isLoadingConfig && (
+            <div className="p-3 rounded-xl bg-amber-500/5 border border-amber-500/10 flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 text-amber-400/60 mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="text-xs font-medium text-amber-400/80">OAuth 2.0 not configured</p>
+                <p className="text-[10px] text-muted-foreground/60 mt-0.5">
+                  Set X_CLIENT_ID and X_CLIENT_SECRET in your environment variables to enable the &quot;Sign in with X&quot; button. 
+                  You can still use cookies below.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Divider with "or" */}
           <div className="relative flex items-center gap-4 py-1">
             <div className="flex-1 h-px bg-border/30" />
@@ -201,9 +218,11 @@ export function TwitterConnect() {
             >
               <Cookie className="w-5 h-5 text-amber-400/60 flex-shrink-0" />
               <div className="flex-1">
-                <p className="text-sm font-medium">Alternative: Connect with Twitter Cookies</p>
+                <p className="text-sm font-medium">Connect with Twitter Cookies</p>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  Use this if OAuth 2.0 is not available
+                  {twikitAvailable 
+                    ? 'Alternative method using Twikit service' 
+                    : 'Store cookies for sync (Twikit service optional)'}
                 </p>
               </div>
               <ChevronDown className="w-4 h-4 text-muted-foreground/50" />
@@ -231,7 +250,9 @@ export function TwitterConnect() {
                 <div className="p-3 rounded-lg bg-amber-500/5 border border-amber-500/10 flex items-start gap-2">
                   <Info className="w-3.5 h-3.5 text-amber-400/60 mt-0.5 flex-shrink-0" />
                   <p className="text-[11px] text-muted-foreground/70">
-                    This method uses your Twitter cookies to authenticate via Twikit. It&apos;s a fallback when OAuth 2.0 is not available.
+                    {twikitAvailable 
+                      ? 'This method uses your Twitter cookies via the Twikit service as a fallback when OAuth 2.0 is unavailable.'
+                      : 'Cookies are stored securely and used during sync. The Twikit service provides additional capabilities but is optional.'}
                   </p>
                 </div>
 
@@ -323,16 +344,31 @@ export function TwitterConnect() {
 
           {/* Config status info */}
           {!isLoadingConfig && xConfig && (
-            <div className="flex items-center gap-2 px-1">
-              <div className={`w-1.5 h-1.5 rounded-full ${xConfig.hasOAuth2 ? 'bg-emerald-400' : 'bg-muted-foreground/30'}`} />
-              <span className="text-[10px] text-muted-foreground/40">
-                OAuth 2.0 {xConfig.hasOAuth2 ? 'available' : 'unavailable'}
-              </span>
-              <span className="text-muted-foreground/20">·</span>
-              <div className={`w-1.5 h-1.5 rounded-full ${xConfig.hasTwikit ? 'bg-amber-400' : 'bg-muted-foreground/30'}`} />
-              <span className="text-[10px] text-muted-foreground/40">
-                Twikit {xConfig.hasTwikit ? 'available' : 'unavailable'}
-              </span>
+            <div className="space-y-1.5 px-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className={`w-1.5 h-1.5 rounded-full ${xConfig.hasOAuth2 ? 'bg-emerald-400' : 'bg-muted-foreground/30'}`} />
+                <span className="text-[10px] text-muted-foreground/40">
+                  OAuth 2.0 {xConfig.hasOAuth2 ? '✓' : '—'}
+                </span>
+                <div className={`w-1.5 h-1.5 rounded-full ${xConfig.hasBearerToken ? 'bg-emerald-400' : 'bg-muted-foreground/30'}`} />
+                <span className="text-[10px] text-muted-foreground/40">
+                  Bearer Token {xConfig.hasBearerToken ? '✓' : '—'}
+                </span>
+                <div className={`w-1.5 h-1.5 rounded-full ${xConfig.hasOAuth1 ? 'bg-emerald-400' : 'bg-muted-foreground/30'}`} />
+                <span className="text-[10px] text-muted-foreground/40">
+                  OAuth 1.0a {xConfig.hasOAuth1 ? '✓' : '—'}
+                </span>
+                <div className={`w-1.5 h-1.5 rounded-full ${xConfig.hasTwikit ? 'bg-amber-400' : 'bg-muted-foreground/30'}`} />
+                <span className="text-[10px] text-muted-foreground/40">
+                  Twikit {xConfig.hasTwikit ? '✓' : '—'}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Cloud className="w-3 h-3 text-muted-foreground/30" />
+                <span className="text-[10px] text-muted-foreground/30">
+                  Vercel-ready • X API v2 direct • Twikit optional
+                </span>
+              </div>
             </div>
           )}
         </motion.div>

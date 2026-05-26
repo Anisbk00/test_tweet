@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
-import { xApiLoginWithOAuth2 } from '@/lib/twitter';
+import { isTwikitAvailable, twikitLoginWithCookies, xApiLoginWithOAuth2 } from '@/lib/twitter';
 
 /**
  * POST /api/auth/connect-twitter
@@ -12,6 +12,8 @@ import { xApiLoginWithOAuth2 } from '@/lib/twitter';
  * 2. OAuth 2.0 token-based (X API v2): Provide accessToken, refreshToken, expiresIn, xUserId, username
  *
  * The xAuthMethod field is set to 'twikit' or 'x_api' accordingly.
+ * The Twikit service is optional — if not available, cookie-based auth
+ * is still stored in the DB for later use.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -72,18 +74,20 @@ export async function POST(request: NextRequest) {
         create: { userId: session.userId, provider: 'x_api' },
       });
 
-      // Send tokens to the Python service session store
-      try {
-        await xApiLoginWithOAuth2(
-          session.userId,
-          accessToken,
-          refreshToken,
-          Number(expiresIn),
-          String(xUserId),
-          xUsername || ''
-        );
-      } catch (sessionErr) {
-        console.error('Failed to send OAuth 2.0 tokens to Python service:', sessionErr);
+      // Optionally send tokens to the Twikit service (if available)
+      if (isTwikitAvailable()) {
+        try {
+          await xApiLoginWithOAuth2(
+            session.userId,
+            accessToken,
+            refreshToken,
+            Number(expiresIn),
+            String(xUserId),
+            xUsername || ''
+          );
+        } catch (sessionErr) {
+          console.warn('Failed to send OAuth 2.0 tokens to Twikit service (non-critical):', sessionErr);
+        }
       }
 
       // Log activity
@@ -128,18 +132,29 @@ export async function POST(request: NextRequest) {
         create: { userId: session.userId, provider: 'twikit' },
       });
 
+      // Try to authenticate with the Twikit service (if available)
+      if (isTwikitAvailable()) {
+        try {
+          await twikitLoginWithCookies(session.userId, cookies as any, undefined);
+        } catch (sessionErr) {
+          console.warn('Failed to authenticate with Twikit service (cookies stored for later):', sessionErr);
+        }
+      }
+
       // Log activity
       await db.activity.create({
         data: {
           userId: session.userId,
           type: 'twitter_connect',
-          metadata: JSON.stringify({ method: 'cookies' }),
+          metadata: JSON.stringify({ method: 'cookies', twikitServiceAvailable: isTwikitAvailable() }),
         },
       });
 
       return NextResponse.json({
         success: true,
-        message: 'Twitter cookies stored. They will be validated during the first sync.',
+        message: isTwikitAvailable()
+          ? 'Twitter cookies stored and validated with Twikit service.'
+          : 'Twitter cookies stored. They will be validated during the first sync.',
         authMethod: 'twikit',
       });
     }

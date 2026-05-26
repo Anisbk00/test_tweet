@@ -59,6 +59,8 @@ export const auth = {
     configured: boolean;
     method: string | null;
     hasOAuth2: boolean;
+    hasOAuth1: boolean;
+    hasBearerToken: boolean;
     hasTwikit: boolean;
   }>('/auth/x/config'),
 };
