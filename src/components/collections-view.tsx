@@ -7,6 +7,7 @@ import * as api from '@/lib/api';
 import { formatCount, parseJSON, parseMediaUrls, getMediaDisplayUrl } from '@/lib/utils';
 import { Plus, FolderOpen, MoreHorizontal, Pencil, Trash2, Bookmark, Image, Video, FileText } from 'lucide-react';
 import { toast } from 'sonner';
+import { SafeImg } from '@/components/safe-img';
 
 export function CollectionsView() {
   const { collections, setCollections, bookmarks } = useAppStore();
@@ -140,7 +141,7 @@ export function CollectionsView() {
               {/* Cover image */}
               <div className="aspect-[4/3] relative overflow-hidden bg-secondary/30">
                 {coverUrl ? (
-                  <img src={coverUrl} alt="" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" loading="lazy" />
+                  <SafeImg src={coverUrl} alt="" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" loading="lazy" />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center" style={{ backgroundColor: `${col.color}15` }}>
                     <span className="text-4xl">{col.icon || '📁'}</span>
@@ -215,7 +216,7 @@ export function CollectionsView() {
                       const previewUrls = parseMediaUrls(b.previewUrls || '[]');
                       return urls.length > 0 ? (
                         <div className="w-10 h-10 rounded-lg overflow-hidden flex-shrink-0">
-                          <img src={getMediaDisplayUrl(urls[0], previewUrls[0], types[0] || 'photo')} alt="" className="w-full h-full object-cover" loading="lazy" />
+                          <SafeImg src={getMediaDisplayUrl(urls[0], previewUrls[0], types[0] || 'photo')} alt="" className="w-full h-full object-cover" loading="lazy" />
                         </div>
                       ) : (
                         <div className="w-10 h-10 rounded-lg bg-secondary/50 flex items-center justify-center flex-shrink-0">

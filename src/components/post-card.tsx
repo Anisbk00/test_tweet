@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import { useAppStore, type Bookmark as BookmarkType } from '@/lib/store';
 import { formatCount, formatDate, parseJSON, parseMediaUrls, getInitials, getAvatarColor, getMediaDisplayUrl } from '@/lib/utils';
 import { Heart, MessageCircle, Repeat2, Eye, Bookmark, Play } from 'lucide-react';
+import { SafeImg } from '@/components/safe-img';
 
 interface PostCardProps {
   bookmark: BookmarkType;
@@ -56,7 +57,7 @@ export function PostCard({ bookmark, variant = 'masonry' }: PostCardProps) {
               <div className="mt-2 flex gap-1">
                 {mediaUrls.slice(0, 3).map((url, i) => (
                   <div key={i} className="relative w-20 h-20 rounded-lg overflow-hidden bg-secondary">
-                    <img
+                    <SafeImg
                       src={getMediaDisplayUrl(url, previewUrls[i], mediaTypes[i] || 'photo')}
                       alt=""
                       className="w-full h-full object-cover"
@@ -102,7 +103,7 @@ export function PostCard({ bookmark, variant = 'masonry' }: PostCardProps) {
       {hasMedia && (
         <div className="relative overflow-hidden">
           <div className={`w-full ${firstMediaType === 'video' ? 'aspect-video' : firstMediaType === 'gif' ? 'aspect-square' : 'aspect-[4/3]'}`}>
-            <img
+            <SafeImg
               src={getMediaDisplayUrl(mediaUrls[0], previewUrls[0], firstMediaType)}
               alt=""
               className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"

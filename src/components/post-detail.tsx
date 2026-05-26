@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import { useAppStore, type Bookmark as BookmarkType } from '@/lib/store';
 import { formatCount, formatDate, parseJSON, parseMediaUrls, getInitials, getAvatarColor, getMediaDisplayUrl, getMediaPlaybackUrl } from '@/lib/utils';
 import { X, Heart, MessageCircle, Repeat2, Eye, Bookmark, Share, ExternalLink, Play, Calendar, Tag } from 'lucide-react';
+import { SafeImg } from '@/components/safe-img';
 
 export function PostDetail() {
   const { selectedBookmark, setDetailOpen, setSelectedBookmark } = useAppStore();
@@ -128,7 +129,7 @@ export function PostDetail() {
                 // Photo
                 return (
                   <div key={i} className="relative rounded-2xl overflow-hidden bg-secondary">
-                    <img
+                    <SafeImg
                       src={displayUrl}
                       alt=""
                       className="w-full object-cover max-h-80"

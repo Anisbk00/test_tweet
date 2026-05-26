@@ -162,9 +162,11 @@ export function getMediaDisplayUrl(
     // Use thumbnail for video/GIF display in img tags
     displayUrl = previewUrl;
   } else {
+    // For photos, or videos without preview URLs
     displayUrl = mediaUrl;
   }
 
+  // Always proxy through our server for Twitter CDN URLs that need it
   return proxyMediaUrl(displayUrl);
 }
 

@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import { useAppStore } from '@/lib/store';
 import { parseJSON, parseMediaUrls, formatCount, getMediaDisplayUrl } from '@/lib/utils';
 import { Image as ImageIcon, Film, FileImage, Grid3X3, Play } from 'lucide-react';
+import { SafeImg } from '@/components/safe-img';
 
 type MediaFilter = 'all' | 'photo' | 'video' | 'gif';
 
@@ -111,15 +112,15 @@ export function MediaGallery() {
               className="group relative aspect-square overflow-hidden cursor-pointer bg-secondary/30"
             >
               {item.type === 'video' || item.type === 'gif' ? (
-                <img
+                <SafeImg
                   src={getMediaDisplayUrl(item.url, item.previewUrl, item.type)}
                   alt="Bookmark media"
                   className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
                   loading="lazy"
                 />
               ) : (
-                <img
-                  src={item.url}
+                <SafeImg
+                  src={getMediaDisplayUrl(item.url, item.previewUrl, 'photo')}
                   alt="Bookmark media"
                   className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
                   loading="lazy"
