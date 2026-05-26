@@ -9,11 +9,28 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    return NextResponse.json({ user });
+    // Ensure the response always includes xConnected and xAuthMethod fields
+    // so the frontend can rely on them without undefined checks
+    return NextResponse.json({
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        username: user.username,
+        avatarUrl: user.avatarUrl,
+        xUserId: user.xUserId ?? null,
+        xUsername: user.xUsername ?? null,
+        xConnected: user.xConnected ?? false,
+        xAuthMethod: user.xAuthMethod ?? null,
+        xOAuth2ExpiresAt: user.xOAuth2ExpiresAt ?? null,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
+      },
+    });
   } catch (error) {
-    console.error('Get profile error:', error);
+    console.error('[auth/me] Get profile error:', error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: 'Failed to fetch profile. Please try again.' },
       { status: 500 }
     );
   }

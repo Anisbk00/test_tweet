@@ -23,3 +23,33 @@ Stage Summary:
 - Sync fails gracefully with clear error messages for invalid cookies
 - All lint checks pass
 - The key remaining issue: Users must provide valid X cookies (auth_token + ct0) for sync to work
+
+---
+Task ID: 3
+Agent: Bug Fix Agent
+Task: Fix frontend bugs - sync error handling, 401 interceptor, data load error state, empty state improvements
+
+Work Log:
+- Issue 2 (twitter-connect.tsx): Improved sync error messages with specific guidance for 401/timeout/generic errors; added `finally` block to ensure `setIsSyncing(false)` always runs; step still transitions to 'done' even on sync failure
+- Issue 3 (api.ts): Added 401 interceptor in `apiFetch` that auto-logs out via `useAppStore.getState().logout()` and redirects to `/` when a 401 is received on any authenticated (non-/auth/) endpoint
+- Issue 4 (app-shell.tsx): Added `loadError`, `isRetrying`, and `retryCount` state; changed safe extractors to return `null` instead of `[]` for failed requests; detect when ALL three requests fail and show error state; added `DataLoadError` component with error details and retry button; retry uses `retryCount` state increment to re-trigger the effect
+- Issue 5 (home-feed.tsx): Updated `EmptyState` component to accept `onSync`, `isSyncing`, and `hasEverSynced` props; differentiates between "no bookmarks yet" (needs sync) and "no matching bookmarks" (filter-related); added sync button directly in empty state
+
+Stage Summary:
+- All 4 issues fixed across 4 files
+- Lint passes with no errors
+- No new files created, only existing files edited
+
+---
+Task ID: 2
+Agent: Bug Fix Agent
+Task: Fix 5 critical backend bugs in BookmarkVault
+
+Work Log:
+- Issue 1 (Auth 401): Made `getSession` resilient to transient DB failures — if DB lookup fails, token-only validation still proceeds. Added console.warn for JWT_SECRET fallback usage. Added structured error logging to `getSession` and `getCurrentUser`.
+- Issue 2 (Sync 500): Improved the final error message in `syncBookmarksDual` to list which providers were tried, provide specific cookie-reconnection guidance, and include the detailed error messages.
+- Issue 3 (Cookie X API): Added RECENT_FALLBACK_QUERY_IDS with more current IDs. Added `discoverQueryIdsSafe()` timeout wrapper (10s) that falls back to cached + static IDs on failure. Added more alternative bookmark query IDs. Improved error messages to mention cookie refresh. All callers now use `discoverQueryIdsSafe()` instead of `discoverQueryIds()`.
+- Issue 4 (apiFetch): Added special handling for 401 errors with "Please log in again" guidance. Added special handling for 500 from sync endpoints with cookie-reconnection hint. Added generic friendly message for other 500 errors.
+- Issue 5 (auth/me): Added explicit field mapping in the response to ensure xConnected/xAuthMethod are always present (never undefined). Improved error logging with `[auth/me]` prefix. Made 500 error message more user-friendly.
+
+All modified files pass lint checks.

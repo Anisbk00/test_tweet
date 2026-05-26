@@ -34,18 +34,49 @@ const FALLBACK_QUERY_IDS: Record<string, string> = {
   UserByRestId: 'tD8zKvQzwY3kdx5yz6YmOw',
 };
 
+// More recent fallback query IDs (updated periodically as X rotates them)
+const RECENT_FALLBACK_QUERY_IDS: Record<string, string> = {
+  Bookmarks: 'rcC9M2XIfMO1HQLZbWCirg',
+  UserByScreenName: 'b4Mf5AEpAlLmMKeewtLJcg',
+  UserByRestId: 'D7CsIUMwO-dLMNWxWXIIMA',
+};
+
 // Alternative query IDs to try if the primary one doesn't work
 const ALTERNATIVE_BOOKMARKS_IDS = [
+  'rcC9M2XIfMO1HQLZbWCirg',
   'S7HmUxJnLGVCLZDi9E5YA',
   'R15ObwordQG7Y6WmL7QP-A',
   'XjKM5VwkyQJmEuwSVeX9hA',
   'W8Srw8txY1m7guZd7KHpA',
+  'C1SbjmdO0K1q9R2wm4JAtg',
 ];
 
 /**
  * Discover GraphQL query IDs from x.com's JavaScript bundle.
  * These IDs change when X updates their frontend code.
  */
+const DISCOVER_TIMEOUT_MS = 10000; // 10 seconds total for discovery
+
+/**
+ * Timeout-safe wrapper for discoverQueryIds.
+ * If discovery takes too long (e.g., on serverless cold starts), fall back to cached or static IDs.
+ */
+async function discoverQueryIdsSafe(): Promise<Record<string, string>> {
+  try {
+    const result = await Promise.race([
+      discoverQueryIds(),
+      new Promise<Record<string, string>>((_, reject) =>
+        setTimeout(() => reject(new Error('Query ID discovery timed out')), DISCOVER_TIMEOUT_MS)
+      ),
+    ]);
+    return result;
+  } catch (error) {
+    console.warn('[x-cookie-api] discoverQueryIds failed or timed out, using fallback IDs:', error instanceof Error ? error.message : error);
+    // Merge all fallback sources: cached > recent > original
+    return { ...FALLBACK_QUERY_IDS, ...RECENT_FALLBACK_QUERY_IDS, ...cachedQueryIds };
+  }
+}
+
 async function discoverQueryIds(): Promise<Record<string, string>> {
   // If cached and fresh, return
   if (Object.keys(cachedQueryIds).length > 0 && Date.now() - lastQueryIdFetch < QUERY_ID_CACHE_TTL) {
@@ -143,8 +174,8 @@ async function discoverQueryIds(): Promise<Record<string, string>> {
       }
     }
 
-    // Merge with fallbacks for any missing IDs
-    const result = { ...FALLBACK_QUERY_IDS, ...queryIds };
+    // Merge with all fallbacks for any missing IDs (recent fallbacks take precedence over old ones)
+    const result = { ...FALLBACK_QUERY_IDS, ...RECENT_FALLBACK_QUERY_IDS, ...queryIds };
 
     if (Object.keys(result).length > 0) {
       cachedQueryIds = result;
@@ -153,8 +184,9 @@ async function discoverQueryIds(): Promise<Record<string, string>> {
 
     return result;
   } catch (error) {
-    console.warn('Failed to discover query IDs, using fallbacks:', error);
-    return FALLBACK_QUERY_IDS;
+    console.warn('[x-cookie-api] Failed to discover query IDs, using fallbacks:', error);
+    // Return merged fallbacks: cached > recent > original
+    return { ...FALLBACK_QUERY_IDS, ...RECENT_FALLBACK_QUERY_IDS, ...cachedQueryIds };
   }
 }
 
@@ -340,7 +372,7 @@ const USER_FEATURES = {
  */
 export async function validateCookies(cookies: CookieAuth): Promise<CookieUserInfo | null> {
   try {
-    const queryIds = await discoverQueryIds();
+    const queryIds = await discoverQueryIdsSafe();
     const queryId = queryIds.UserByScreenName || queryIds.UserByRestId;
 
     if (!queryId) {
@@ -384,7 +416,7 @@ export async function validateCookies(cookies: CookieAuth): Promise<CookieUserIn
 export async function getCookieUserInfo(cookies: CookieAuth): Promise<CookieUserInfo | null> {
   try {
     // Try the viewer endpoint first
-    const queryIds = await discoverQueryIds();
+    const queryIds = await discoverQueryIdsSafe();
     const queryId = queryIds.UserByRestId || FALLBACK_QUERY_IDS.UserByRestId;
 
     // Try getting user info from the /1.1/account/verify_credentials.json endpoint
@@ -447,7 +479,7 @@ export async function getCookieBookmarks(
   cursor?: string,
   count: number = 20
 ): Promise<CookiePaginatedResponse> {
-  const queryIds = await discoverQueryIds();
+  const queryIds = await discoverQueryIdsSafe();
   
   // Collect all query IDs to try (discovered + alternatives)
   const bookmarkQueryIds = [
@@ -512,7 +544,7 @@ export async function getCookieBookmarks(
     }
   }
 
-  throw lastError || new Error('All bookmark query IDs failed. The X API query IDs may have changed.');
+  throw lastError || new Error('All bookmark query IDs failed. The X API query IDs may have changed. Your cookies may also need refreshing — try reconnecting your X account.');
 }
 
 /**
@@ -561,7 +593,10 @@ export async function syncCookieBookmarks(
         // Return what we have so far
         break;
       }
-      throw error;
+      const syncErrMsg = error instanceof Error ? error.message : String(error);
+      throw new Error(
+        `Cookie bookmark sync failed: ${syncErrMsg}. Your cookies may need refreshing — try reconnecting your X account.`
+      );
     }
   }
 

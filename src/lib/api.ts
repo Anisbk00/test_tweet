@@ -19,8 +19,32 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   });
 
   if (!res.ok) {
-    const error = await res.json().catch(() => ({ error: 'Request failed' }));
-    throw new Error(error.error || `HTTP ${res.status}`);
+    const errorBody = await res.json().catch(() => ({ error: 'Request failed' }));
+    const errorMsg = errorBody.error || `HTTP ${res.status}`;
+
+    // Special handling for 401 — suggest re-authentication
+    if (res.status === 401) {
+      // Auto-logout on authenticated endpoints (but not /auth/me which is handled by the caller)
+      if (token && !path.startsWith('/auth/')) {
+        useAppStore.getState().logout();
+        if (typeof window !== 'undefined') {
+          window.location.href = '/';
+        }
+      }
+      throw new Error(`Authentication required: ${errorMsg}. Please log in again.`);
+    }
+
+    // Special handling for 500 from sync endpoints — surface the underlying message with guidance
+    if (res.status === 500 && path.includes('/sync')) {
+      throw new Error(`Sync failed: ${errorMsg}. If you used cookie-based auth, your cookies may have expired — try reconnecting your X account.`);
+    }
+
+    // Generic friendly message for other server errors
+    if (res.status === 500) {
+      throw new Error(`Server error: ${errorMsg}. Please try again later.`);
+    }
+
+    throw new Error(errorMsg);
   }
 
   return res.json();
@@ -69,7 +93,7 @@ export const auth = {
 export const bookmarks = {
   list: (params?: Record<string, string>) => {
     const query = params ? '?' + new URLSearchParams(params).toString() : '';
-    return apiFetch<{ data: any[]; pagination: any }>(`/bookmarks${query}`);
+    return apiFetch<{ bookmarks: any[]; data?: any[]; pagination: any }>(`/bookmarks${query}`);
   },
   get: (id: string) => apiFetch<any>(`/bookmarks/${id}`),
   sync: () => apiFetch<any>('/bookmarks/sync', { method: 'POST' }),

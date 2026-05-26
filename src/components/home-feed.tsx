@@ -45,9 +45,9 @@ export function HomeFeed() {
       const result = await api.sync.trigger();
       // Safely reload bookmarks
       try {
-        const res = await api.bookmarks.list('limit=100');
-        const bookmarksList = res?.bookmarks || res?.data || (Array.isArray(res) ? res : []);
-        setBookmarks(bookmarksList);
+        const res = await api.bookmarks.list({ limit: '100' });
+        const bookmarksList = res?.bookmarks || res?.data || [];
+        setBookmarks(Array.isArray(bookmarksList) ? bookmarksList : []);
       } catch (reloadErr) {
         console.warn('Failed to reload bookmarks after sync:', reloadErr);
       }
@@ -155,7 +155,7 @@ export function HomeFeed() {
       {/* Feed */}
       <div className="p-4">
         {filteredBookmarks.length === 0 ? (
-          <EmptyState />
+          <EmptyState onSync={handleSync} isSyncing={isSyncing} hasEverSynced={bookmarks.length > 0} />
         ) : viewMode === 'masonry' ? (
           <div className="masonry-grid">
             {displayedBookmarks.map((bookmark, i) => (
@@ -191,16 +191,35 @@ export function HomeFeed() {
   );
 }
 
-function EmptyState() {
+function EmptyState({ onSync, isSyncing, hasEverSynced }: { onSync: () => void; isSyncing: boolean; hasEverSynced: boolean }) {
   return (
     <div className="flex flex-col items-center justify-center py-20 text-center">
       <div className="w-16 h-16 rounded-2xl bg-secondary/50 flex items-center justify-center mb-4">
         <LayoutGrid className="w-8 h-8 text-muted-foreground" />
       </div>
-      <h3 className="text-lg font-semibold mb-1">No bookmarks yet</h3>
-      <p className="text-sm text-muted-foreground max-w-xs">
-        Sync your X/Twitter bookmarks to start organizing and discovering your saved content.
-      </p>
+      {hasEverSynced ? (
+        <>
+          <h3 className="text-lg font-semibold mb-1">No matching bookmarks</h3>
+          <p className="text-sm text-muted-foreground max-w-xs">
+            Try changing your filters or sync to get the latest bookmarks.
+          </p>
+        </>
+      ) : (
+        <>
+          <h3 className="text-lg font-semibold mb-1">No bookmarks yet</h3>
+          <p className="text-sm text-muted-foreground max-w-xs">
+            Sync your X/Twitter bookmarks to start organizing and discovering your saved content.
+          </p>
+        </>
+      )}
+      <button
+        onClick={onSync}
+        disabled={isSyncing}
+        className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-500/20 text-amber-400 border border-amber-500/30 text-sm font-medium hover:bg-amber-500/30 transition-colors disabled:opacity-50"
+      >
+        <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
+        {isSyncing ? 'Syncing...' : 'Sync Bookmarks'}
+      </button>
     </div>
   );
 }

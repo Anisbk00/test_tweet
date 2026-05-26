@@ -1,7 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { useAppStore, type Bookmark } from '@/lib/store';
+import { useAppStore, type Bookmark as BookmarkType } from '@/lib/store';
 import { formatCount, formatDate, parseJSON, getInitials, getAvatarColor } from '@/lib/utils';
 import { X, Heart, MessageCircle, Repeat2, Eye, Bookmark, Share, ExternalLink, Play, Calendar, Tag } from 'lucide-react';
 

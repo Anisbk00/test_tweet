@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
     if (twikitAvailable) availableMethods.push('twikit');
 
     // Also try to get additional info from the Twikit service if available
-    let twikitServiceDetails = null;
+    let twikitServiceDetails: Record<string, unknown> | null = null;
     if (twikitAvailable) {
       try {
         twikitServiceDetails = await xApiGetAuthConfig();

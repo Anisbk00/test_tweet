@@ -68,7 +68,7 @@ export function MediaGallery() {
       <div className="flex items-center gap-2 mb-6 overflow-x-auto hide-scrollbar">
         {[
           { key: 'all' as MediaFilter, icon: Grid3X3, label: 'All', count: counts.all },
-          { key: 'photo' as MediaFilter, icon: Image, label: 'Photos', count: counts.photo },
+          { key: 'photo' as MediaFilter, icon: ImageIcon, label: 'Photos', count: counts.photo },
           { key: 'video' as MediaFilter, icon: Film, label: 'Videos', count: counts.video },
           { key: 'gif' as MediaFilter, icon: FileImage, label: 'GIFs', count: counts.gif },
         ].map((tab) => (

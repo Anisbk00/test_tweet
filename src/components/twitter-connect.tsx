@@ -91,7 +91,16 @@ export function TwitterConnect() {
           toast.success('Bookmarks synced!');
         } catch (syncErr: any) {
           console.error('Initial sync failed:', syncErr);
-          toast.error('Sync will continue in background');
+          const syncMsg = syncErr?.message || '';
+          if (syncMsg.includes('401') || syncMsg.includes('Unauthorized')) {
+            toast.error('Sync failed — your cookies may have expired. Please reconnect.');
+          } else if (syncMsg.includes('timeout') || syncMsg.includes('Timeout')) {
+            toast.error('Sync timed out. You can retry from the home page.');
+          } else {
+            toast.error('Sync failed: ' + (syncMsg || 'Could not fetch bookmarks. You can retry from the home page.'));
+          }
+        } finally {
+          setIsSyncing(false);
         }
 
         setStep('done');

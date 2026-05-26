@@ -2,12 +2,12 @@
 
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { useAppStore, type Bookmark } from '@/lib/store';
+import { useAppStore, type Bookmark as BookmarkType } from '@/lib/store';
 import { formatCount, formatDate, parseJSON, getInitials, getAvatarColor } from '@/lib/utils';
 import { Heart, MessageCircle, Repeat2, Eye, Bookmark, Play, ExternalLink, MoreHorizontal } from 'lucide-react';
 
 interface PostCardProps {
-  bookmark: Bookmark;
+  bookmark: BookmarkType;
   variant?: 'masonry' | 'list';
 }
 

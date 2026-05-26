@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAppStore, type Page } from '@/lib/store';
 import * as api from '@/lib/api';
@@ -14,6 +14,7 @@ import { DiscoveryView } from '@/components/discovery-view';
 import { ProfileView } from '@/components/profile-view';
 import { PostDetail } from '@/components/post-detail';
 import { TwitterConnect } from '@/components/twitter-connect';
+import { AlertCircle, RefreshCw } from 'lucide-react';
 
 const pageComponents: Record<Page, React.ComponentType> = {
   home: HomeFeed,
@@ -27,67 +28,90 @@ const pageComponents: Record<Page, React.ComponentType> = {
 export function AppShell() {
   const { user, setBookmarks, setCollections, setTags, selectedBookmark, isDetailOpen, currentPage } = useAppStore();
   const [isDataLoaded, setIsDataLoaded] = useState(() => !user?.xConnected);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [isRetrying, setIsRetrying] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
   const hasLoaded = useRef(false);
 
   const isTwitterConnected = user?.xConnected || false;
 
-  // Load all data on mount (only when Twitter is connected)
+  const handleRetry = useCallback(() => {
+    setLoadError(null);
+    setIsRetrying(true);
+    setRetryCount((c) => c + 1);
+  }, []);
+
+  // Load all data on mount and on retry (only when Twitter is connected)
   useEffect(() => {
     if (!isTwitterConnected) {
       return;
     }
 
-    if (hasLoaded.current) return;
+    if (retryCount === 0 && hasLoaded.current) return;
     hasLoaded.current = true;
 
     let cancelled = false;
+
     async function load() {
       try {
         const [bookmarksRes, collectionsRes, tagsRes] = await Promise.allSettled([
-          api.bookmarks.list('limit=100'),
+          api.bookmarks.list({ limit: '100' }),
           api.collections.list(),
           api.tags.list(),
         ]);
         if (!cancelled) {
           // Safely extract data from settled results
           const safeBookmarks = (res: PromiseSettledResult<any>) => {
-            if (res.status !== 'fulfilled') return [];
+            if (res.status !== 'fulfilled') return null;
             const data = res.value;
             if (Array.isArray(data)) return data;
             if (Array.isArray(data?.bookmarks)) return data.bookmarks;
             if (Array.isArray(data?.data)) return data.data;
-            return [];
+            return null;
           };
 
           const safeArray = (res: PromiseSettledResult<any>) => {
-            if (res.status !== 'fulfilled') return [];
+            if (res.status !== 'fulfilled') return null;
             const data = res.value;
             if (Array.isArray(data)) return data;
             if (Array.isArray(data?.data)) return data.data;
             if (Array.isArray(data?.collections)) return data.collections;
-            return [];
+            return null;
           };
 
           const bookmarksList = safeBookmarks(bookmarksRes);
           const collectionsList = safeArray(collectionsRes);
           const tagsList = safeArray(tagsRes);
 
-          setBookmarks(bookmarksList);
-          setCollections(collectionsList);
-          setTags(tagsList);
-          setIsDataLoaded(true);
+          // Check if ALL three requests failed
+          const allFailed = bookmarksList === null && collectionsList === null && tagsList === null;
+          if (allFailed) {
+            const failedReasons = [bookmarksRes, collectionsRes, tagsRes]
+              .filter((r): r is PromiseRejectedResult => r.status === 'rejected')
+              .map((r) => r.reason?.message || 'Unknown error');
+            setLoadError(failedReasons.join('; ') || 'All data requests failed');
+            setIsDataLoaded(false);
+          } else {
+            setBookmarks(bookmarksList || []);
+            setCollections(collectionsList || []);
+            setTags(tagsList || []);
+            setIsDataLoaded(true);
+          }
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error('Failed to load data:', err);
         if (!cancelled) {
-          // Still mark as loaded to prevent infinite loading
-          setIsDataLoaded(true);
+          setLoadError(err?.message || 'Failed to load data');
+          setIsDataLoaded(false);
         }
+      }
+      if (!cancelled) {
+        setIsRetrying(false);
       }
     }
     load();
     return () => { cancelled = true; };
-  }, [isTwitterConnected, setBookmarks, setCollections, setTags]);
+  }, [isTwitterConnected, retryCount, setBookmarks, setCollections, setTags]);
 
   // If Twitter not connected, show connect screen
   if (!isTwitterConnected) {
@@ -115,7 +139,13 @@ export function AppShell() {
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
           >
-            {isDataLoaded ? <PageComponent /> : <LoadingSkeleton />}
+            {loadError ? (
+              <DataLoadError error={loadError} onRetry={handleRetry} isRetrying={isRetrying} />
+            ) : isDataLoaded ? (
+              <PageComponent />
+            ) : (
+              <LoadingSkeleton />
+            )}
           </motion.div>
         </AnimatePresence>
       </main>
@@ -140,6 +170,31 @@ function LoadingSkeleton() {
           <div key={i} className="shimmer rounded-2xl" style={{ height: `${120 + Math.random() * 100}px` }} />
         ))}
       </div>
+    </div>
+  );
+}
+
+function DataLoadError({ error, onRetry, isRetrying }: { error: string; onRetry: () => void; isRetrying: boolean }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-20 text-center px-4">
+      <div className="w-16 h-16 rounded-2xl bg-red-500/10 flex items-center justify-center mb-4">
+        <AlertCircle className="w-8 h-8 text-red-400" />
+      </div>
+      <h3 className="text-lg font-semibold mb-1">Failed to load data</h3>
+      <p className="text-sm text-muted-foreground max-w-xs mb-1">
+        We couldn&apos;t load your bookmarks, collections, or tags.
+      </p>
+      <p className="text-xs text-muted-foreground/60 max-w-xs mb-6">
+        {error}
+      </p>
+      <button
+        onClick={onRetry}
+        disabled={isRetrying}
+        className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-secondary/50 border border-border/50 text-sm font-medium hover:bg-secondary/70 transition-colors disabled:opacity-50"
+      >
+        <RefreshCw className={`w-4 h-4 ${isRetrying ? 'animate-spin' : ''}`} />
+        {isRetrying ? 'Retrying...' : 'Retry'}
+      </button>
     </div>
   );
 }

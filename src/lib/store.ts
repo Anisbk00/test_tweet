@@ -14,7 +14,7 @@ interface User {
   xAuthMethod: string | null; // 'x_api' | 'twikit' | 'auto' | 'none'
 }
 
-interface Bookmark {
+export interface Bookmark {
   id: string;
   xPostId: string;
   xAuthorName: string | null;

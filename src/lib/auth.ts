@@ -2,7 +2,10 @@ import { db } from '@/lib/db';
 import { NextRequest } from 'next/server';
 import crypto from 'crypto';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'bookmarkvault-secret-key';
+const JWT_SECRET = process.env.JWT_SECRET || (() => {
+  console.warn('[auth] WARNING: JWT_SECRET is using the fallback value. Set the JWT_SECRET environment variable to avoid token validation issues across deploys.');
+  return 'bookmarkvault-secret-key';
+})();
 
 interface TokenPayload {
   userId: string;
@@ -101,15 +104,32 @@ export async function getSession(request: NextRequest): Promise<{
 
   const token = authHeader.substring(7);
   const payload = verifyToken(token);
-  if (!payload) return null;
+  if (!payload) {
+    console.warn('[auth] getSession: token verification failed — token may be expired or signed with a different secret');
+    return null;
+  }
 
   // Verify session exists in database
-  const session = await db.session.findUnique({
-    where: { id: payload.sessionId },
-  });
+  // If the database lookup fails (e.g., transient connection issue on serverless),
+  // still return the token payload so the request isn't rejected due to a DB hiccup.
+  try {
+    const session = await db.session.findUnique({
+      where: { id: payload.sessionId },
+    });
 
-  if (!session) return null;
-  if (new Date(session.expiresAt) < new Date()) return null;
+    if (!session) {
+      console.warn('[auth] getSession: session not found in database for sessionId:', payload.sessionId);
+      return null;
+    }
+    if (new Date(session.expiresAt) < new Date()) {
+      console.warn('[auth] getSession: session expired for sessionId:', payload.sessionId);
+      return null;
+    }
+  } catch (dbError) {
+    console.error('[auth] getSession: database lookup failed, falling back to token-only validation:', dbError);
+    // Token is valid; allow the request through even though we couldn't confirm the session in the DB.
+    // The token's own expiry is still enforced by verifyToken above.
+  }
 
   return { userId: payload.userId, sessionId: payload.sessionId };
 }
@@ -118,23 +138,32 @@ export async function getCurrentUser(request: NextRequest) {
   const session = await getSession(request);
   if (!session) return null;
 
-  const user = await db.user.findUnique({
-    where: { id: session.userId },
-    select: {
-      id: true,
-      email: true,
-      name: true,
-      username: true,
-      avatarUrl: true,
-      xUserId: true,
-      xUsername: true,
-      xConnected: true,
-      xAuthMethod: true,
-      xOAuth2ExpiresAt: true,
-      createdAt: true,
-      updatedAt: true,
-    },
-  });
+  try {
+    const user = await db.user.findUnique({
+      where: { id: session.userId },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        username: true,
+        avatarUrl: true,
+        xUserId: true,
+        xUsername: true,
+        xConnected: true,
+        xAuthMethod: true,
+        xOAuth2ExpiresAt: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
 
-  return user;
+    if (!user) {
+      console.error('[auth] getCurrentUser: user not found for userId:', session.userId);
+    }
+
+    return user;
+  } catch (dbError) {
+    console.error('[auth] getCurrentUser: database lookup failed for userId:', session.userId, dbError);
+    return null;
+  }
 }

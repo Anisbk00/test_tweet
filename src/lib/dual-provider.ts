@@ -703,5 +703,18 @@ export async function syncBookmarksDual(userId: string): Promise<SyncResult> {
     }
   }
 
-  throw new Error('All sync providers failed. ' + errors.join('; '));
+  const triedMethods: string[] = [];
+  if (accessToken && user.xUserId) triedMethods.push('X API v2 (OAuth 2.0)');
+  if (cookies) triedMethods.push('Cookie-based X GraphQL API');
+  if (twikitAuthed) triedMethods.push('Twikit service');
+
+  const guidance = cookies
+    ? 'If you used cookie-based auth, your cookies may have expired. Please reconnect your X account or try OAuth 2.0.'
+    : 'Try connecting your X account with OAuth 2.0 or cookies to enable sync.';
+
+  throw new Error(
+    `All sync providers failed. Tried: ${triedMethods.join(', ') || 'no providers available'}. ` +
+    `${guidance} ` +
+    `Details: ${errors.join('; ')}`
+  );
 }
