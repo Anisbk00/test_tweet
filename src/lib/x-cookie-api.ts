@@ -244,6 +244,42 @@ export interface CookieUserInfo {
 // Core Request Method
 // ============================================================
 
+/**
+ * Normalize cookie values — trim whitespace, decode URL-encoding, etc.
+ * The ct0 cookie is often URL-encoded in browser DevTools display.
+ */
+export function normalizeCookies(cookies: CookieAuth): CookieAuth {
+  let auth_token = cookies.auth_token.trim();
+  let ct0 = cookies.ct0.trim();
+
+  // URL-decode ct0 if it's encoded (e.g. %3D → =)
+  try {
+    if (ct0.includes('%')) {
+      const decoded = decodeURIComponent(ct0);
+      // Only use decoded if it looks like a valid CSRF token (alphanumeric + =)
+      if (/^[a-zA-Z0-9|=]+$/.test(decoded)) {
+        ct0 = decoded;
+      }
+    }
+  } catch {
+    // If decode fails, use the original
+  }
+
+  // Same for auth_token
+  try {
+    if (auth_token.includes('%')) {
+      const decoded = decodeURIComponent(auth_token);
+      if (/^[a-zA-Z0-9]+$/.test(decoded)) {
+        auth_token = decoded;
+      }
+    }
+  } catch {
+    // If decode fails, use the original
+  }
+
+  return { auth_token, ct0 };
+}
+
 async function cookieFetch<T>(
   path: string,
   cookies: CookieAuth,
@@ -254,6 +290,9 @@ async function cookieFetch<T>(
   } = {}
 ): Promise<T> {
   const { method = 'GET', body, params = {} } = options;
+
+  // Normalize cookie values before using them
+  const normalized = normalizeCookies(cookies);
 
   const url = new URL(`${X_API_BASE}${path}`);
 
@@ -266,15 +305,18 @@ async function cookieFetch<T>(
     method,
     headers: {
       'Authorization': `Bearer ${X_PUBLIC_BEARER}`,
-      'Cookie': `auth_token=${cookies.auth_token}; ct0=${cookies.ct0}`,
-      'X-CSRF-TOKEN': cookies.ct0,
+      'Cookie': `auth_token=${normalized.auth_token}; ct0=${normalized.ct0}`,
+      'X-CSRF-TOKEN': normalized.ct0,
       'X-Twitter-Active-User': 'yes',
       'X-Twitter-Client-Language': 'en',
       'Content-Type': 'application/json',
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
       'Accept': '*/*',
       'Origin': 'https://x.com',
       'Referer': 'https://x.com/',
+      'Sec-Fetch-Dest': 'empty',
+      'Sec-Fetch-Mode': 'cors',
+      'Sec-Fetch-Site': 'same-origin',
     },
   };
 
@@ -305,7 +347,35 @@ async function cookieFetch<T>(
   }
 
   if (response.status === 401 || response.status === 403) {
-    throw new Error('Cookie authentication failed. Your cookies may have expired. Please reconnect your X account.');
+    // Provide detailed diagnostics
+    const errorBody = await response.text().catch(() => '');
+    let detail = '';
+    try {
+      const parsed = JSON.parse(errorBody);
+      detail = parsed?.errors?.[0]?.message || parsed?.detail || '';
+    } catch {
+      detail = errorBody.substring(0, 200);
+    }
+    
+    const normalized = normalizeCookies(cookies);
+    const authLength = normalized.auth_token.length;
+    const ct0Length = normalized.ct0.length;
+    const ct0HasPercent = cookies.ct0.includes('%');
+    
+    let hint = '';
+    if (ct0HasPercent) {
+      hint = ' NOTE: Your ct0 cookie contained URL-encoded characters (%), which were auto-decoded. If this still fails, try copying the raw ct0 value without any % encoding.';
+    }
+    if (authLength < 20 || ct0Length < 20) {
+      hint += ' WARNING: One of your cookie values seems too short — make sure you copied the complete value.';
+    }
+    
+    console.error(`[Cookie Auth Failed] Status: ${response.status}, auth_token length: ${authLength}, ct0 length: ${ct0Length}, URL-encoded ct0: ${ct0HasPercent}, Response: ${detail}`);
+    
+    throw new Error(
+      `Cookie authentication failed (HTTP ${response.status}). ${detail ? `X says: "${detail}". ` : ''}` +
+      `Your cookies may have expired. Please reconnect your X account with fresh cookies.${hint}`
+    );
   }
 
   if (!response.ok) {
@@ -415,6 +485,9 @@ export async function validateCookies(cookies: CookieAuth): Promise<CookieUserIn
  */
 export async function getCookieUserInfo(cookies: CookieAuth): Promise<CookieUserInfo | null> {
   try {
+    // Normalize cookies first
+    const normalized = normalizeCookies(cookies);
+    
     // Try the viewer endpoint first
     const queryIds = await discoverQueryIdsSafe();
     const queryId = queryIds.UserByRestId || FALLBACK_QUERY_IDS.UserByRestId;
@@ -428,9 +501,11 @@ export async function getCookieUserInfo(cookies: CookieAuth): Promise<CookieUser
       const response = await fetch('https://api.x.com/1.1/account/verify_credentials.json', {
         headers: {
           'Authorization': `Bearer ${X_PUBLIC_BEARER}`,
-          'Cookie': `auth_token=${cookies.auth_token}; ct0=${cookies.ct0}`,
-          'X-CSRF-TOKEN': cookies.ct0,
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Cookie': `auth_token=${normalized.auth_token}; ct0=${normalized.ct0}`,
+          'X-CSRF-TOKEN': normalized.ct0,
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+          'Origin': 'https://x.com',
+          'Referer': 'https://x.com/',
         },
         signal: controller.signal,
       });

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { isTwikitAvailable, twikitLoginWithCookies, xApiLoginWithOAuth2 } from '@/lib/twitter';
-import { getCookieUserInfo, validateCookies } from '@/lib/x-cookie-api';
+import { getCookieUserInfo, validateCookies, normalizeCookies } from '@/lib/x-cookie-api';
 
 /**
  * POST /api/auth/connect-twitter
@@ -112,9 +112,11 @@ export async function POST(request: NextRequest) {
       });
     } else {
       // ---- Cookie-based connection ----
+      // Normalize cookies (trim whitespace, decode URL-encoding)
+      const normalized = normalizeCookies({ auth_token: authToken, ct0 });
       const cookies: Record<string, string> = {
-        auth_token: authToken,
-        ct0: ct0,
+        auth_token: normalized.auth_token,
+        ct0: normalized.ct0,
       };
 
       // Validate cookies by trying to fetch user info
@@ -122,7 +124,7 @@ export async function POST(request: NextRequest) {
       let xUsernameFromCookies: string | null = null;
 
       try {
-        const userInfo = await getCookieUserInfo({ auth_token: authToken, ct0 });
+        const userInfo = await getCookieUserInfo({ auth_token: normalized.auth_token, ct0: normalized.ct0 });
         if (userInfo) {
           xUserIdFromCookies = userInfo.id;
           xUsernameFromCookies = userInfo.username;
