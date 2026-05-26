@@ -148,3 +148,40 @@ Stage Summary:
 - Auto-constructs twid from user ID when possible
 - Better error diagnostics throughout the auth chain
 - parseJSON now safely handles non-array parsed values
+
+---
+Task ID: 6
+Agent: Main Agent
+Task: Fix cookie-based X GraphQL API 404 "Query not found" error
+
+Work Log:
+- Diagnosed root cause: X changed the bookmarks GraphQL endpoint from "Bookmarks" to "BookmarkSearchTimeline"
+  - The query ID, operation name, and response structure all changed
+  - Old: /i/api/graphql/{id}/Bookmarks → response: viewer.bookmarks_timeline.timeline
+  - New: /i/api/graphql/{id}/BookmarkSearchTimeline → response: search_by_raw_query.bookmarks_search_timeline.timeline
+- Discovered current X API parameters by fetching x.com's main JS bundle:
+  - New BookmarkSearchTimeline query ID: 5kB8iO1n19yXfcxM4e30Nw
+  - New UserByScreenName query ID: IGgvgiOx4QZndDHuD3x9TQ
+  - New UserByRestId query ID: VQfQ9wwYdk6j_u2O4vt64Q
+  - New Viewer query ID: _8ClT24oZ8tpylf_OSuNdg
+  - Updated bearer token: AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA
+- Updated src/lib/x-cookie-api.ts:
+  - Updated FALLBACK_BEARER to current token
+  - Updated FALLBACK_QUERY_IDS with BookmarkSearchTimeline (not Bookmarks)
+  - Updated discoverQueryIds() to search for BookmarkSearchTimeline operation name
+  - Updated discoverBearerToken() with better regex patterns
+  - Updated getCookieBookmarks() to use BookmarkSearchTimeline with rawQuery/querySource variables
+  - Added fieldToggles parameter support (required by new API)
+  - Updated BOOKMARKS_FEATURES to current feature set from x.com
+  - Added BOOKMARKS_FIELD_TOGGLES constant
+  - Updated parseBookmarksResponse() to handle new response path (search_by_raw_query.bookmarks_search_timeline)
+- Configured TWIKIT_SERVICE_URL in .env file (http://localhost:3031)
+- Installed missing Python dependency (requests_oauthlib) and restarted Twikit service
+- All lint checks pass
+
+Stage Summary:
+- X's bookmarks endpoint renamed from "Bookmarks" to "BookmarkSearchTimeline"
+- All query IDs, bearer token, features, and field toggles updated to current values
+- Response parsing updated for new JSON structure
+- Twikit Python service now running as fallback on port 3031
+- This should fix the 404 "Query not found" error

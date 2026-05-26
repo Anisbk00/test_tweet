@@ -13,8 +13,8 @@
 // ============================================================
 
 // Public bearer token used by x.com's web client — we discover it dynamically
-// Fallback: the well-known bearer token (may be outdated)
-const FALLBACK_BEARER = 'AAAAAAAAAAAAAAAAAAAAAFQODgEAAAAAVHTp76lzh3rFzcHbmHVvQxYYpTw%3DckAlMinMpkYqZ2M5VsnCEq4u0LkCE7ieFgEGvGmPdKkxWnoDNT';
+// Updated 2025-03: Current bearer token from x.com's main JS bundle
+const FALLBACK_BEARER = 'AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA';
 
 const X_API_BASE = 'https://x.com/i/api/graphql';
 
@@ -91,7 +91,16 @@ async function discoverBearerToken(): Promise<string> {
 
         const js = await jsResponse.text();
 
-        // Pattern 1: Bearer token in quotes — typically looks like "AAAAAAAAAAAAAAAAAAAAA..."
+        // Pattern 1: Bearer token in "Bearer XXXXX" format (most reliable)
+        const bearerMatch1 = js.match(/Bearer\s+(AAAAAAAAAAAAAAAAAAAA[A-Za-z0-9%_]+)/);
+        if (bearerMatch1) {
+          cachedBearerToken = bearerMatch1[1];
+          lastBearerFetch = Date.now();
+          console.log('[x-cookie-api] Discovered bearer token from JS bundle (Bearer pattern)');
+          return cachedBearerToken;
+        }
+
+        // Pattern 2: Bearer token in quotes — typically looks like "AAAAAAAAAAAAAAAAAAAAA..."
         const bearerMatch = js.match(/"((?:A{5,}[A-Za-z0-9%]+))"/);
         if (bearerMatch && bearerMatch[1].length > 50) {
           cachedBearerToken = bearerMatch[1];
@@ -100,12 +109,12 @@ async function discoverBearerToken(): Promise<string> {
           return cachedBearerToken;
         }
 
-        // Pattern 2: bearerToken= or authorization:"Bearer ..."
+        // Pattern 3: bearerToken= or authorization:"Bearer ..."
         const bearerMatch2 = js.match(/(?:bearerToken|authorization)["\s:=]+"([^"]+)"/i);
         if (bearerMatch2) {
           cachedBearerToken = bearerMatch2[1].replace(/^Bearer\s+/i, '');
           lastBearerFetch = Date.now();
-          console.log('[x-cookie-api] Discovered bearer token from JS bundle (pattern 2)');
+          console.log('[x-cookie-api] Discovered bearer token from JS bundle (pattern 3)');
           return cachedBearerToken;
         }
       } catch {
@@ -130,28 +139,20 @@ let cachedQueryIds: Record<string, string> = {};
 let lastQueryIdFetch = 0;
 const QUERY_ID_CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours
 
-// Fallback query IDs (these change when X updates their frontend)
+// Updated 2025-03: Current query IDs discovered from x.com's main JS bundle
+// X renamed the Bookmarks operation to "BookmarkSearchTimeline" and changed the
+// response path from viewer.bookmarks_timeline to search_by_raw_query.bookmarks_search_timeline
 const FALLBACK_QUERY_IDS: Record<string, string> = {
-  Bookmarks: 'S7HmUxJnLGVCLZDi9E5YA',
-  UserByScreenName: 'G3KGOASz96M-Qu0nwmGXNg',
-  UserByRestId: 'tD8zKvQzwY3kdx5yz6YmOw',
-};
-
-// More recent fallback query IDs
-const RECENT_FALLBACK_QUERY_IDS: Record<string, string> = {
-  Bookmarks: 'rcC9M2XIfMO1HQLZbWCirg',
-  UserByScreenName: 'b4Mf5AEpAlLmMKeewtLJcg',
-  UserByRestId: 'D7CsIUMwO-dLMNWxWXIIMA',
+  BookmarkSearchTimeline: '5kB8iO1n19yXfcxM4e30Nw',
+  UserByScreenName: 'IGgvgiOx4QZndDHuD3x9TQ',
+  UserByRestId: 'VQfQ9wwYdk6j_u2O4vt64Q',
+  Viewer: '_8ClT24oZ8tpylf_OSuNdg',
 };
 
 // Alternative query IDs to try if the primary one doesn't work
+// These include older IDs that may still be accepted
 const ALTERNATIVE_BOOKMARKS_IDS = [
-  'rcC9M2XIfMO1HQLZbWCirg',
-  'S7HmUxJnLGVCLZDi9E5YA',
-  'R15ObwordQG7Y6WmL7QP-A',
-  'XjKM5VwkyQJmEuwSVeX9hA',
-  'W8Srw8txY1m7guZd7KHpA',
-  'C1SbjmdO0K1q9R2wm4JAtg',
+  '5kB8iO1n19yXfcxM4e30Nw',
 ];
 
 const DISCOVER_TIMEOUT_MS = 10000;
@@ -167,7 +168,7 @@ async function discoverQueryIdsSafe(): Promise<Record<string, string>> {
     return result;
   } catch (error) {
     console.warn('[x-cookie-api] discoverQueryIds failed or timed out, using fallback IDs:', error instanceof Error ? error.message : error);
-    return { ...FALLBACK_QUERY_IDS, ...RECENT_FALLBACK_QUERY_IDS, ...cachedQueryIds };
+    return { ...FALLBACK_QUERY_IDS, ...cachedQueryIds };
   }
 }
 
@@ -194,16 +195,10 @@ async function discoverQueryIds(): Promise<Record<string, string>> {
     const html = await response.text();
 
     const jsUrls: string[] = [];
-    const jsRegex = /https:\/\/abs\.twimg\.com\/responsive-web\/client-web[^\s"']+/g;
+    const jsRegex = /https:\/\/abs\.twimg\.com\/responsive-web\/client-web[^\s"']+\.js/g;
     let match;
     while ((match = jsRegex.exec(html)) !== null) {
       jsUrls.push(match[0]);
-    }
-
-    const altRegex = /"https:\/\/abs\.twimg\.com\/responsive-web\/client-web\/[^"]+\.js"/g;
-    while ((match = altRegex.exec(html)) !== null) {
-      const url = match[0].replace(/"/g, '');
-      if (!jsUrls.includes(url)) jsUrls.push(url);
     }
 
     if (jsUrls.length === 0) {
@@ -211,7 +206,8 @@ async function discoverQueryIds(): Promise<Record<string, string>> {
     }
 
     const queryIds: Record<string, string> = {};
-    const bundlesToSearch = jsUrls.slice(0, 5);
+    // Search main bundle first (most likely to contain query IDs)
+    const bundlesToSearch = jsUrls.slice(0, 8);
 
     for (const jsUrl of bundlesToSearch) {
       try {
@@ -226,10 +222,20 @@ async function discoverQueryIds(): Promise<Record<string, string>> {
 
         const js = await jsResponse.text();
 
-        if (!queryIds.Bookmarks) {
-          const bookmarksMatch = js.match(/queryId:"([^"]+)"[^}]*operationName:"Bookmarks"/);
+        // X renamed the operation from "Bookmarks" to "BookmarkSearchTimeline"
+        // Try both names for compatibility
+        if (!queryIds.BookmarkSearchTimeline) {
+          const bookmarksMatch = js.match(/queryId:"([^"]+)"[^}]*operationName:"BookmarkSearchTimeline"/);
           if (bookmarksMatch) {
-            queryIds.Bookmarks = bookmarksMatch[1];
+            queryIds.BookmarkSearchTimeline = bookmarksMatch[1];
+          }
+        }
+
+        // Fallback: try old "Bookmarks" operation name
+        if (!queryIds.BookmarkSearchTimeline && !queryIds.Bookmarks) {
+          const oldMatch = js.match(/queryId:"([^"]+)"[^}]*operationName:"Bookmarks"/);
+          if (oldMatch) {
+            queryIds.Bookmarks = oldMatch[1];
           }
         }
 
@@ -247,7 +253,15 @@ async function discoverQueryIds(): Promise<Record<string, string>> {
           }
         }
 
-        if (queryIds.Bookmarks && queryIds.UserByScreenName && queryIds.UserByRestId) {
+        if (!queryIds.Viewer) {
+          const viewerMatch = js.match(/queryId:"([^"]+)"[^}]*operationName:"Viewer"/);
+          if (viewerMatch) {
+            queryIds.Viewer = viewerMatch[1];
+          }
+        }
+
+        const bookmarksReady = queryIds.BookmarkSearchTimeline || queryIds.Bookmarks;
+        if (bookmarksReady && queryIds.UserByScreenName && queryIds.UserByRestId) {
           break;
         }
       } catch {
@@ -255,7 +269,7 @@ async function discoverQueryIds(): Promise<Record<string, string>> {
       }
     }
 
-    const result = { ...FALLBACK_QUERY_IDS, ...RECENT_FALLBACK_QUERY_IDS, ...queryIds };
+    const result = { ...FALLBACK_QUERY_IDS, ...queryIds };
 
     if (Object.keys(result).length > 0) {
       cachedQueryIds = result;
@@ -265,7 +279,7 @@ async function discoverQueryIds(): Promise<Record<string, string>> {
     return result;
   } catch (error) {
     console.warn('[x-cookie-api] Failed to discover query IDs, using fallbacks:', error);
-    return { ...FALLBACK_QUERY_IDS, ...RECENT_FALLBACK_QUERY_IDS, ...cachedQueryIds };
+    return { ...FALLBACK_QUERY_IDS, ...cachedQueryIds };
   }
 }
 
@@ -521,31 +535,59 @@ async function cookieFetch<T>(
 // Features Object (required for GraphQL requests)
 // ============================================================
 
+// Updated 2025-03: Features extracted from x.com's main JS bundle for BookmarkSearchTimeline
 const BOOKMARKS_FEATURES = {
-  graphql_timeline_v2_bookmark_timeline: true,
+  rweb_video_screen_enabled: true,
+  rweb_cashtags_enabled: true,
+  profile_label_improvements_pcf_label_in_post_enabled: true,
+  responsive_web_profile_redirect_enabled: true,
   rweb_tipjar_consumption_enabled: true,
-  responsive_web_graphql_exclude_directive_enabled: true,
   verified_phone_label_enabled: false,
   creator_subscriptions_tweet_preview_api_enabled: true,
   responsive_web_graphql_timeline_navigation_enabled: true,
   responsive_web_graphql_skip_user_profile_image_extensions_enabled: false,
+  premium_content_api_read_enabled: true,
   communities_web_enable_tweet_community_results_fetch: true,
   c9s_tweet_anatomy_moderator_badge_enabled: true,
+  responsive_web_grok_analyze_button_fetch_trends_enabled: true,
+  responsive_web_grok_analyze_post_followups_enabled: true,
+  rweb_cashtags_composer_attachment_enabled: true,
+  responsive_web_jetfuel_frame: true,
+  responsive_web_grok_share_attachment_enabled: true,
+  responsive_web_grok_annotations_enabled: true,
   articles_preview_enabled: true,
   responsive_web_edit_tweet_api_enabled: true,
+  rweb_conversational_replies_downvote_enabled: true,
   graphql_is_translatable_rweb_tweet_is_translatable_enabled: true,
   view_counts_everywhere_api_enabled: true,
   longform_notetweets_consumption_enabled: true,
   responsive_web_twitter_article_tweet_consumption_enabled: true,
-  tweet_awards_web_tipping_enabled: false,
-  creator_subscriptions_quote_tweet_preview_enabled: false,
+  content_disclosure_indicator_enabled: true,
+  content_disclosure_ai_generated_indicator_enabled: true,
+  responsive_web_grok_show_grok_translated_post: true,
+  responsive_web_grok_analysis_button_from_backend: true,
+  post_ctas_fetch_enabled: true,
   freedom_of_speech_not_reach_fetch_enabled: true,
   standardized_nudges_misinfo: true,
   tweet_with_visibility_results_prefer_gql_limited_actions_policy_enabled: true,
-  rweb_video_timestamps_enabled: true,
   longform_notetweets_rich_text_read_enabled: true,
   longform_notetweets_inline_media_enabled: true,
+  responsive_web_grok_image_annotation_enabled: true,
+  responsive_web_grok_imagine_annotation_enabled: true,
+  responsive_web_grok_community_note_auto_translation_is_enabled: true,
   responsive_web_enhance_cards_enabled: false,
+};
+
+// Field toggles required by BookmarkSearchTimeline
+const BOOKMARKS_FIELD_TOGGLES = {
+  withPayments: true,
+  withAuxiliaryUserLabels: true,
+  withArticleRichContentState: true,
+  withArticlePlainText: true,
+  withArticleSummaryText: true,
+  withArticleVoiceOver: true,
+  withGrokAnalyze: true,
+  withDisallowedReplyControls: true,
 };
 
 const USER_FEATURES = {
@@ -765,53 +807,68 @@ export async function getCookieBookmarks(
 ): Promise<CookiePaginatedResponse> {
   const queryIds = await discoverQueryIdsSafe();
   
+  // X renamed the operation from "Bookmarks" to "BookmarkSearchTimeline"
+  // Try the new name first, then fall back to the old one
+  const bookmarkQueryId = queryIds.BookmarkSearchTimeline || queryIds.Bookmarks;
+  
   // Collect all query IDs to try (discovered + alternatives)
   const bookmarkQueryIds = [
-    queryIds.Bookmarks,
-    ...ALTERNATIVE_BOOKMARKS_IDS.filter(id => id !== queryIds.Bookmarks),
+    bookmarkQueryId,
+    ...ALTERNATIVE_BOOKMARKS_IDS.filter(id => id !== bookmarkQueryId),
   ].filter(Boolean);
 
+  // BookmarkSearchTimeline uses rawQuery and querySource variables
   const variables: Record<string, unknown> = {
+    rawQuery: '',
     count,
-    includePromotedContent: false,
+    querySource: '',
   };
 
   if (cursor) {
     variables.cursor = cursor;
   }
 
-  const body = {
-    variables,
-    features: BOOKMARKS_FEATURES,
-  };
-
   let lastError: Error | null = null;
 
   for (const queryId of bookmarkQueryIds) {
+    // Determine the operation name:
+    // - If the queryId was discovered as BookmarkSearchTimeline, use that name
+    // - If it was discovered as Bookmarks (old), use that name  
+    // - For the fallback ID, use BookmarkSearchTimeline
+    let operationName = 'BookmarkSearchTimeline';
+    if (queryId === queryIds.Bookmarks && queryId !== queryIds.BookmarkSearchTimeline) {
+      operationName = 'Bookmarks'; // Only use old name if this is explicitly the old Bookmarks ID
+    }
+    
     try {
       const result = await cookieFetch<any>(
-        `/${queryId}/Bookmarks`,
+        `/${queryId}/${operationName}`,
         cookies,
         {
           method: 'GET',
           params: {
-            variables: JSON.stringify(body.variables),
-            features: JSON.stringify(body.features),
+            variables: JSON.stringify(variables),
+            features: JSON.stringify(BOOKMARKS_FEATURES),
+            fieldToggles: JSON.stringify(BOOKMARKS_FIELD_TOGGLES),
           },
         }
       );
 
       // Check if response has the expected structure
-      if (result?.data?.viewer?.bookmarks_timeline !== undefined || 
+      // New API: search_by_raw_query.bookmarks_search_timeline.timeline
+      // Old API: viewer.bookmarks_timeline.timeline
+      if (result?.data?.search_by_raw_query?.bookmarks_search_timeline !== undefined ||
+          result?.data?.viewer?.bookmarks_timeline !== undefined ||
           result?.data?.viewer !== undefined ||
           Array.isArray(result?.data)) {
         // Cache this working query ID
-        cachedQueryIds.Bookmarks = queryId;
+        cachedQueryIds.BookmarkSearchTimeline = queryId;
         return parseBookmarksResponse(result);
       }
       
       // If we get a response but it doesn't have the expected structure, try next ID
       lastError = new Error(`Unexpected response structure for query ID ${queryId}`);
+      console.warn(`[x-cookie-api] Unexpected response for ${queryId}/${operationName}:`, JSON.stringify(result).substring(0, 300));
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
       // If it's a 401/403, the cookies are invalid - no point trying other IDs
@@ -821,9 +878,11 @@ export async function getCookieBookmarks(
       }
       // 404 means query ID is wrong, try next one
       if (lastError.message.includes('404') || lastError.message.includes('Query not found')) {
+        console.warn(`[x-cookie-api] Query ID ${queryId} not found (404), trying next...`);
         continue;
       }
       // For other errors, try next ID
+      console.warn(`[x-cookie-api] Error for ${queryId}/${operationName}:`, lastError.message);
       continue;
     }
   }
@@ -919,7 +978,10 @@ function parseBookmarksResponse(data: any): CookiePaginatedResponse {
   let hasMore = false;
 
   try {
+    // New API path: data.search_by_raw_query.bookmarks_search_timeline.timeline.instructions
+    // Old API path: data.viewer.bookmarks_timeline.timeline.instructions
     const instructions =
+      data?.data?.search_by_raw_query?.bookmarks_search_timeline?.timeline?.instructions ||
       data?.data?.viewer?.bookmarks_timeline?.timeline?.instructions || [];
 
     let entries: any[] = [];
