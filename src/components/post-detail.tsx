@@ -70,7 +70,7 @@ export function PostDetail() {
             </div>
             <div className="flex-1">
               <div className="font-bold">{bookmark.xAuthorName}</div>
-              <div className="text-sm text-muted-foreground">@{bookmark.xAuthorUsername}</div>
+              <div className="text-sm text-muted-foreground">@{bookmark.xAuthorUsername || 'unknown'}</div>
             </div>
             <motion.button
               whileTap={{ scale: 0.95 }}
@@ -180,9 +180,9 @@ export function PostDetail() {
                       key={col.id}
                       className="px-2.5 py-1 rounded-lg text-xs font-medium"
                       style={{
-                        backgroundColor: `${col.color}15`,
+                        backgroundColor: `${col.color || '#888888'}15`,
                         color: col.color || undefined,
-                        borderColor: `${col.color}30`,
+                        borderColor: `${col.color || '#888888'}30`,
                       }}
                     >
                       {col.icon} {col.name}
@@ -225,7 +225,7 @@ export function PostDetail() {
           {/* Open in X button */}
           <div className="px-5 pb-6">
             <motion.a
-              href={`https://x.com/${bookmark.xAuthorUsername}/status/${bookmark.xPostId}`}
+              href={`https://x.com/${bookmark.xAuthorUsername || 'i'}/status/${bookmark.xPostId}`}
               target="_blank"
               rel="noopener noreferrer"
               whileTap={{ scale: 0.98 }}

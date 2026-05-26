@@ -143,7 +143,7 @@ export function CollectionsView() {
                 {coverUrl ? (
                   <SafeImg src={coverUrl} alt="" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" loading="lazy" />
                 ) : (
-                  <div className="w-full h-full flex items-center justify-center" style={{ backgroundColor: `${col.color}15` }}>
+                  <div className="w-full h-full flex items-center justify-center" style={{ backgroundColor: `${col.color || '#888888'}15` }}>
                     <span className="text-4xl">{col.icon || '📁'}</span>
                   </div>
                 )}
@@ -226,7 +226,7 @@ export function CollectionsView() {
                     })()}
                     <div className="flex-1 min-w-0">
                       <p className="text-sm line-clamp-1">{b.content}</p>
-                      <p className="text-[10px] text-muted-foreground">@{b.xAuthorUsername}</p>
+                      <p className="text-[10px] text-muted-foreground">@{b.xAuthorUsername || 'unknown'}</p>
                     </div>
                     <span className="text-[10px] text-muted-foreground flex-shrink-0">{formatCount(b.likeCount)} ♥</span>
                   </div>

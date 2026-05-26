@@ -1,11 +1,13 @@
-export function formatCount(num: number): string {
-  if (num >= 1000000) {
-    return (num / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
+export function formatCount(num: number | null | undefined): string {
+  if (num == null || isNaN(num as number)) return '0';
+  const n = num as number;
+  if (n >= 1000000) {
+    return (n / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
   }
-  if (num >= 1000) {
-    return (num / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
+  if (n >= 1000) {
+    return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
   }
-  return num.toString();
+  return n.toString();
 }
 
 export function formatDate(dateStr: string | null): string {

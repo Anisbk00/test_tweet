@@ -47,7 +47,7 @@ export function PostCard({ bookmark, variant = 'masonry' }: PostCardProps) {
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
               <span className="font-semibold text-sm truncate">{bookmark.xAuthorName}</span>
-              <span className="text-muted-foreground text-xs">@{bookmark.xAuthorUsername}</span>
+              <span className="text-muted-foreground text-xs">@{bookmark.xAuthorUsername || 'unknown'}</span>
               <span className="text-muted-foreground text-xs">· {formatDate(bookmark.postedAt)}</span>
             </div>
             <p className="text-sm leading-relaxed line-clamp-2">{bookmark.content}</p>
@@ -148,7 +148,7 @@ export function PostCard({ bookmark, variant = 'masonry' }: PostCardProps) {
           </div>
           <div className="flex-1 min-w-0">
             <span className="font-semibold text-xs truncate block">{bookmark.xAuthorName}</span>
-            <span className="text-muted-foreground text-[10px]">@{bookmark.xAuthorUsername}</span>
+            <span className="text-muted-foreground text-[10px]">@{bookmark.xAuthorUsername || 'unknown'}</span>
           </div>
           <span className="text-[10px] text-muted-foreground flex-shrink-0">{formatDate(bookmark.postedAt)}</span>
         </div>
@@ -169,7 +169,7 @@ export function PostCard({ bookmark, variant = 'masonry' }: PostCardProps) {
                 key={tag.id}
                 className="px-2 py-0.5 rounded-md text-[10px] font-medium"
                 style={{
-                  backgroundColor: `${tag.color}15`,
+                  backgroundColor: `${tag.color || '#888888'}15`,
                   color: tag.color || 'oklch(0.65 0 0)',
                 }}
               >

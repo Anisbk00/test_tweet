@@ -26,7 +26,7 @@ export function TrendingTag() {
             key={tag.id}
             whileTap={{ scale: 0.95 }}
             className="px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap bg-secondary/30 border border-border/30 hover:border-border/60 hover:bg-secondary/60 transition-colors"
-            style={{ borderColor: `${tag.color}30`, color: tag.color || undefined }}
+            style={{ borderColor: `${tag.color || '#888888'}30`, color: tag.color || undefined }}
           >
             #{tag.name}
           </motion.button>

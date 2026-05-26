@@ -52,7 +52,16 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
     throw new Error(errorMsg);
   }
 
-  return res.json();
+  // Safely parse JSON response — handle empty/void responses
+  const text = await res.text();
+  if (!text || text.trim().length === 0) {
+    return undefined as T;
+  }
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    return undefined as T;
+  }
 }
 
 // Auth

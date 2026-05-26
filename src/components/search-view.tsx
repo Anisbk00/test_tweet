@@ -231,7 +231,7 @@ export function SearchView() {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-0.5">
                   <span className="font-semibold text-sm truncate">{bookmark.xAuthorName}</span>
-                  <span className="text-muted-foreground text-xs">@{bookmark.xAuthorUsername}</span>
+                  <span className="text-muted-foreground text-xs">@{bookmark.xAuthorUsername || 'unknown'}</span>
                 </div>
                 <p className="text-sm line-clamp-2 mb-1.5">{bookmark.content}</p>
                 <div className="flex items-center gap-3 text-[10px] text-muted-foreground">

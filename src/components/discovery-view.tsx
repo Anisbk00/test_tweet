@@ -188,8 +188,8 @@ export function DiscoveryView() {
               <h2 className="font-semibold">Recommended for You</h2>
             </div>
             <div className="space-y-2">
-              {bookmarks
-                .sort((a, b) => b.likeCount - a.likeCount)
+              {[...bookmarks]
+                .sort((a, b) => (b.likeCount || 0) - (a.likeCount || 0))
                 .slice(0, 5)
                 .map((bookmark, i) => (
                   <motion.div
@@ -208,7 +208,7 @@ export function DiscoveryView() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm line-clamp-1">{bookmark.content}</p>
-                      <p className="text-[10px] text-muted-foreground">@{bookmark.xAuthorUsername}</p>
+                      <p className="text-[10px] text-muted-foreground">@{bookmark.xAuthorUsername || 'unknown'}</p>
                     </div>
                     <span className="text-[10px] text-amber-400 flex-shrink-0">♥ {formatCount(bookmark.likeCount)}</span>
                   </motion.div>

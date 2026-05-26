@@ -26,7 +26,7 @@ const pageComponents: Record<Page, React.ComponentType> = {
 };
 
 export function AppShell() {
-  const { user, setBookmarks, setCollections, setTags, selectedBookmark, isDetailOpen, currentPage } = useAppStore();
+  const { user, setBookmarks, setCollections, setTags, selectedBookmark, isDetailOpen, currentPage, disconnectX } = useAppStore();
   const [isDataLoaded, setIsDataLoaded] = useState(() => !user?.xConnected);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isRetrying, setIsRetrying] = useState(false);
@@ -34,6 +34,15 @@ export function AppShell() {
   const hasLoaded = useRef(false);
 
   const isTwitterConnected = user?.xConnected || false;
+
+  // Listen for navigate-to-connect custom event (from Profile view)
+  useEffect(() => {
+    function handleNavigateToConnect() {
+      disconnectX();
+    }
+    window.addEventListener('navigate-to-connect', handleNavigateToConnect);
+    return () => window.removeEventListener('navigate-to-connect', handleNavigateToConnect);
+  }, [disconnectX]);
 
   const handleRetry = useCallback(() => {
     setLoadError(null);

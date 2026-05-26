@@ -92,6 +92,9 @@ interface AppStore {
   // Sync
   lastSyncAt: string | null;
   setLastSyncAt: (date: string) => void;
+
+  // X disconnect
+  disconnectX: () => void;
 }
 
 export const useAppStore = create<AppStore>()(
@@ -136,6 +139,11 @@ export const useAppStore = create<AppStore>()(
       // Sync
       lastSyncAt: null,
       setLastSyncAt: (date) => set({ lastSyncAt: date }),
+
+      // X disconnect
+      disconnectX: () => set((state) => ({
+        user: state.user ? { ...state.user, xConnected: false, xAuthMethod: 'none' } : null,
+      })),
     }),
     {
       name: 'bookmarkvault-store',

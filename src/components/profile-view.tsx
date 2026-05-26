@@ -44,7 +44,7 @@ export function ProfileView() {
         ]);
         if (overviewRes.status === 'fulfilled') setAnalytics(overviewRes.value);
         if (activityRes.status === 'fulfilled') setActivityData(activityRes.value);
-        if (creatorsRes.status === 'fulfilled') setCreators(creatorsRes.value?.data || creatorsRes.value || []);
+        if (creatorsRes.status === 'fulfilled') setCreators(Array.isArray(creatorsRes.value?.data) ? creatorsRes.value.data : Array.isArray(creatorsRes.value) ? creatorsRes.value : []);
         if (xConfigRes.status === 'fulfilled' && xConfigRes.value) {
           setHasOAuth2((xConfigRes.value as any).hasOAuth2 === true);
         }
@@ -192,7 +192,7 @@ export function ProfileView() {
           </div>
           <div className="p-3 rounded-xl bg-background/40 text-center">
             <p className="text-xl font-bold">{(() => {
-              const authors = new Set(bookmarks.map((b) => b.xAuthorUsername));
+              const authors = new Set(bookmarks.map((b) => b.xAuthorUsername).filter(Boolean));
               return authors.size;
             })()}</p>
             <p className="text-[10px] text-muted-foreground">Creators</p>
@@ -450,7 +450,7 @@ export function ProfileView() {
           </div>
 
           {/* Reconnect with X — cookie-based (recommended) or OAuth */}
-          {(!user?.xConnected || user?.xAuthMethod === 'cookie') && (
+          {(!user?.xConnected || user?.xAuthMethod === 'cookie' || user?.xAuthMethod === 'twikit') && (
             <div className="mt-3 pt-3 border-t border-border/10">
               <p className="text-[11px] text-muted-foreground/60 mb-2">
                 {user?.xConnected ? 'Cookies expired? Reconnect to refresh your access.' : 'Connect your X account to sync bookmarks.'}
