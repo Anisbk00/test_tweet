@@ -53,3 +53,25 @@ Work Log:
 - Issue 5 (auth/me): Added explicit field mapping in the response to ensure xConnected/xAuthMethod are always present (never undefined). Improved error logging with `[auth/me]` prefix. Made 500 error message more user-friendly.
 
 All modified files pass lint checks.
+
+---
+Task ID: 4
+Agent: Main Agent
+Task: Fix all remaining errors - Image constructor, TypeScript issues, push to GitHub
+
+Work Log:
+- Fixed 'Failed to construct Image' error in media-gallery.tsx (used ImageIcon instead of browser Image)
+- Fixed Bookmark type export in store.ts (changed interface Bookmark to export interface Bookmark)
+- Fixed Bookmark naming conflict in post-card.tsx and post-detail.tsx (renamed to BookmarkType)
+- Fixed bookmarks.list() call signature in app-shell.tsx and home-feed.tsx (object instead of string)
+- Fixed api.ts return type for bookmarks.list() to include both bookmarks and data fields
+- Fixed twikitServiceDetails type in x/config route (Record<string, unknown> | null)
+- Added Array.isArray safety check in home-feed.tsx for bookmark list
+- All lint checks pass
+- Committed and pushed all fixes to GitHub (commit 8681e6e)
+
+Stage Summary:
+- All critical frontend errors fixed (Image constructor, type conflicts, API call signatures)
+- All critical backend errors fixed (auth resilience, sync error messages, cookie API improvements)
+- Code pushed to GitHub for automatic Vercel redeployment
+- Remaining limitation: cookie-based X API access may fail if cookies are expired or X blocks serverless IPs
