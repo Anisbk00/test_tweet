@@ -80,7 +80,8 @@ export function TwitterConnect() {
           setAuth(token, meResult.user);
         }
 
-        toast.success(`Connected as @${meResult?.user?.xUsername || 'user'}`);
+        const displayName = result.username || meResult?.user?.xUsername || 'user';
+        toast.success(`Connected as @${displayName}`);
         setStep('syncing');
 
         // Trigger initial sync
@@ -153,7 +154,7 @@ export function TwitterConnect() {
               <CheckCircle2 className="w-5 h-5 text-emerald-400 flex-shrink-0" />
               <div className="flex-1">
                 <p className="text-sm font-medium text-emerald-400">
-                  Connected via {user.xAuthMethod === 'x_api' ? 'X API (OAuth 2.0)' : 'Twikit (Cookies)'}
+                  Connected via {user.xAuthMethod === 'x_api' ? 'X API (OAuth 2.0)' : user.xAuthMethod === 'cookie' ? 'Cookie-based' : 'Twikit (Cookies)'}
                 </p>
                 <p className="text-xs text-muted-foreground">
                   @{user.xUsername || 'user'}
@@ -221,8 +222,8 @@ export function TwitterConnect() {
                 <p className="text-sm font-medium">Connect with Twitter Cookies</p>
                 <p className="text-xs text-muted-foreground mt-0.5">
                   {twikitAvailable 
-                    ? 'Alternative method using Twikit service' 
-                    : 'Store cookies for sync (Twikit service optional)'}
+                    ? 'Alternative method using cookies directly' 
+                    : 'Direct API access using your X cookies'}
                 </p>
               </div>
               <ChevronDown className="w-4 h-4 text-muted-foreground/50" />
@@ -240,7 +241,7 @@ export function TwitterConnect() {
               >
                 <Cookie className="w-4 h-4 text-amber-400/60" />
                 <span className="text-xs font-medium text-muted-foreground flex-1">
-                  Connect with Twitter Cookies (Twikit)
+                  Connect with Twitter Cookies (Direct API)
                 </span>
                 <ChevronUp className="w-4 h-4 text-muted-foreground/50" />
               </button>
@@ -251,8 +252,8 @@ export function TwitterConnect() {
                   <Info className="w-3.5 h-3.5 text-amber-400/60 mt-0.5 flex-shrink-0" />
                   <p className="text-[11px] text-muted-foreground/70">
                     {twikitAvailable 
-                      ? 'This method uses your Twitter cookies via the Twikit service as a fallback when OAuth 2.0 is unavailable.'
-                      : 'Cookies are stored securely and used during sync. The Twikit service provides additional capabilities but is optional.'}
+                      ? 'This method uses your Twitter cookies to access X\'s API directly. No Python service needed.'
+                      : 'Your cookies are used to access X\'s internal API directly. No additional services needed — this works on Vercel.'}
                   </p>
                 </div>
 
@@ -350,13 +351,13 @@ export function TwitterConnect() {
                 <span className="text-[10px] text-muted-foreground/40">
                   OAuth 2.0 {xConfig.hasOAuth2 ? '✓' : '—'}
                 </span>
+                <div className={`w-1.5 h-1.5 rounded-full ${(xConfig as any).hasCookie ? 'bg-emerald-400' : 'bg-muted-foreground/30'}`} />
+                <span className="text-[10px] text-muted-foreground/40">
+                  Cookie {((xConfig as any).hasCookie !== false) ? '✓' : '—'}
+                </span>
                 <div className={`w-1.5 h-1.5 rounded-full ${xConfig.hasBearerToken ? 'bg-emerald-400' : 'bg-muted-foreground/30'}`} />
                 <span className="text-[10px] text-muted-foreground/40">
-                  Bearer Token {xConfig.hasBearerToken ? '✓' : '—'}
-                </span>
-                <div className={`w-1.5 h-1.5 rounded-full ${xConfig.hasOAuth1 ? 'bg-emerald-400' : 'bg-muted-foreground/30'}`} />
-                <span className="text-[10px] text-muted-foreground/40">
-                  OAuth 1.0a {xConfig.hasOAuth1 ? '✓' : '—'}
+                  Bearer {xConfig.hasBearerToken ? '✓' : '—'}
                 </span>
                 <div className={`w-1.5 h-1.5 rounded-full ${xConfig.hasTwikit ? 'bg-amber-400' : 'bg-muted-foreground/30'}`} />
                 <span className="text-[10px] text-muted-foreground/40">
@@ -366,7 +367,7 @@ export function TwitterConnect() {
               <div className="flex items-center gap-1.5">
                 <Cloud className="w-3 h-3 text-muted-foreground/30" />
                 <span className="text-[10px] text-muted-foreground/30">
-                  Vercel-ready • X API v2 direct • Twikit optional
+                  Vercel-ready • Cookie-based direct • X API v2 • Twikit optional
                 </span>
               </div>
             </div>

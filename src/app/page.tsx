@@ -33,12 +33,16 @@ export default function Home() {
 
             // Show toast for OAuth callback
             if (xConnected === 'true' && user.user.xConnected) {
-              const method = xMethod === 'x_api' ? 'X API (OAuth 2.0)' : 'Twikit';
+              const method = xMethod === 'x_api' ? 'X API (OAuth 2.0)' : 'Cookie-based';
               const { toast } = await import('sonner');
               toast.success(`Connected via ${method} as @${user.user.xUsername || 'user'}`);
             }
+          } else {
+            // Token is invalid, log out
+            useAppStore.getState().logout();
           }
         } catch {
+          // Token expired or invalid, clear auth
           useAppStore.getState().logout();
         }
       }

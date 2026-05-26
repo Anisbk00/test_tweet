@@ -61,6 +61,8 @@ export async function POST(request: NextRequest) {
         username: user.username,
         avatarUrl: user.avatarUrl,
         xUsername: user.xUsername,
+        xConnected: user.xConnected,
+        xAuthMethod: user.xAuthMethod,
         createdAt: user.createdAt,
       },
     });

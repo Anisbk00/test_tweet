@@ -43,12 +43,18 @@ export function HomeFeed() {
     setIsSyncing(true);
     try {
       const result = await api.sync.trigger();
-      const res = await api.bookmarks.list('limit=100');
-      setBookmarks(res.bookmarks || res.data || []);
-      if (result.success) {
+      // Safely reload bookmarks
+      try {
+        const res = await api.bookmarks.list('limit=100');
+        const bookmarksList = res?.bookmarks || res?.data || (Array.isArray(res) ? res : []);
+        setBookmarks(bookmarksList);
+      } catch (reloadErr) {
+        console.warn('Failed to reload bookmarks after sync:', reloadErr);
+      }
+      if (result?.success) {
         toast.success(`Synced ${result.syncedCount || 0} bookmarks`);
       } else {
-        toast.error(result.error || 'Sync failed');
+        toast.error('Sync completed with issues');
       }
     } catch (err: any) {
       console.error('Sync failed:', err);

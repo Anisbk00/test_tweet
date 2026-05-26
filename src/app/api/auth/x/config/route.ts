@@ -25,6 +25,7 @@ export async function GET(request: NextRequest) {
     if (oauth2Available) availableMethods.push('x_api_oauth2');
     if (oauth1Available) availableMethods.push('x_api_oauth1');
     if (bearerAvailable) availableMethods.push('x_api_bearer');
+    availableMethods.push('cookie'); // Cookie-based always available (user provides cookies)
     if (twikitAvailable) availableMethods.push('twikit');
 
     // Also try to get additional info from the Twikit service if available
@@ -38,11 +39,12 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json({
-      configured: oauth2Available || oauth1Available || bearerAvailable || twikitAvailable,
-      method: oauth2Available ? 'x_api' : twikitAvailable ? 'twikit' : null,
+      configured: true, // Always configured since cookie-based is always available
+      method: oauth2Available ? 'x_api' : 'cookie',
       hasOAuth2: oauth2Available,
       hasOAuth1: oauth1Available,
       hasBearerToken: bearerAvailable,
+      hasCookie: true, // Cookie-based auth is always available
       hasTwikit: twikitAvailable,
       availableMethods,
       twikitService: twikitServiceDetails,

@@ -26,7 +26,7 @@ const pageComponents: Record<Page, React.ComponentType> = {
 
 export function AppShell() {
   const { user, setBookmarks, setCollections, setTags, selectedBookmark, isDetailOpen, currentPage } = useAppStore();
-  const [isDataLoaded, setIsDataLoaded] = useState(false);
+  const [isDataLoaded, setIsDataLoaded] = useState(() => !user?.xConnected);
   const hasLoaded = useRef(false);
 
   const isTwitterConnected = user?.xConnected || false;
@@ -43,16 +43,35 @@ export function AppShell() {
     let cancelled = false;
     async function load() {
       try {
-        const [bookmarksRes, collectionsRes, tagsRes] = await Promise.all([
+        const [bookmarksRes, collectionsRes, tagsRes] = await Promise.allSettled([
           api.bookmarks.list('limit=100'),
           api.collections.list(),
           api.tags.list(),
         ]);
         if (!cancelled) {
-          // API returns { bookmarks: [...], pagination: {...} }
-          const bookmarksList = bookmarksRes.bookmarks || bookmarksRes.data || [];
-          const collectionsList = Array.isArray(collectionsRes) ? collectionsRes : (collectionsRes?.data || []);
-          const tagsList = Array.isArray(tagsRes) ? tagsRes : (tagsRes?.data || []);
+          // Safely extract data from settled results
+          const safeBookmarks = (res: PromiseSettledResult<any>) => {
+            if (res.status !== 'fulfilled') return [];
+            const data = res.value;
+            if (Array.isArray(data)) return data;
+            if (Array.isArray(data?.bookmarks)) return data.bookmarks;
+            if (Array.isArray(data?.data)) return data.data;
+            return [];
+          };
+
+          const safeArray = (res: PromiseSettledResult<any>) => {
+            if (res.status !== 'fulfilled') return [];
+            const data = res.value;
+            if (Array.isArray(data)) return data;
+            if (Array.isArray(data?.data)) return data.data;
+            if (Array.isArray(data?.collections)) return data.collections;
+            return [];
+          };
+
+          const bookmarksList = safeBookmarks(bookmarksRes);
+          const collectionsList = safeArray(collectionsRes);
+          const tagsList = safeArray(tagsRes);
+
           setBookmarks(bookmarksList);
           setCollections(collectionsList);
           setTags(tagsList);
@@ -60,7 +79,10 @@ export function AppShell() {
         }
       } catch (err) {
         console.error('Failed to load data:', err);
-        if (!cancelled) setIsDataLoaded(true);
+        if (!cancelled) {
+          // Still mark as loaded to prevent infinite loading
+          setIsDataLoaded(true);
+        }
       }
     }
     load();

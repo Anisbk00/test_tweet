@@ -1,16 +1,15 @@
 /**
- * Dual Provider Service — Orchestrates X API v2 (direct) + Twikit (fallback)
+ * Dual Provider Service — Orchestrates X API v2 (direct) + Cookie-based + Twikit (fallback)
  *
  * Primary: X API v2 calls directly from Next.js (works on Vercel)
- * Fallback: Twikit service (requires TWIKIT_SERVICE_URL env var)
+ * Secondary: Cookie-based X internal GraphQL API (direct, no Python dependency)
+ * Tertiary: Twikit service (requires TWIKIT_SERVICE_URL env var)
  *
  * For each data request, this service:
  * 1. Tries X API v2 directly (if user has OAuth 2.0 tokens)
- * 2. Falls back to Twikit service (if available and user has cookies)
- * 3. Returns results from whichever provider succeeds
- *
- * The sync flow also supports OAuth 1.0a (Bearer Token) for endpoints
- * that don't require user context (search, tweet lookup).
+ * 2. Falls back to cookie-based X GraphQL API (if user has cookies stored)
+ * 3. Falls back to Twikit service (if available and user has cookies)
+ * 4. Returns results from whichever provider succeeds
  */
 
 import { db } from '@/lib/db';
@@ -22,7 +21,6 @@ import {
   getUserLists,
   getListTweets,
   searchTweets,
-  getMe,
   refreshOAuth2Token,
   XApiError,
   StandardPaginatedResponse,
@@ -41,12 +39,20 @@ import {
   isTwikitAvailable,
   TwikitPaginatedResponse,
 } from '@/lib/twitter';
+import {
+  getCookieBookmarks,
+  getCookieUserInfo,
+  syncCookieBookmarks,
+  transformCookiePost,
+  CookieAuth,
+  CookieBookmark,
+} from '@/lib/x-cookie-api';
 
 // ============================================================
 // Types
 // ============================================================
 
-export type Provider = 'x_api' | 'twikit';
+export type Provider = 'x_api' | 'cookie' | 'twikit';
 
 export interface DualProviderResult {
   data: any[];
@@ -83,6 +89,23 @@ async function getUserAuthInfo(userId: string) {
       xAccessToken: true,
     },
   });
+}
+
+/**
+ * Parse stored cookies from the user record.
+ */
+function parseCookies(user: NonNullable<Awaited<ReturnType<typeof getUserAuthInfo>>>): CookieAuth | null {
+  if (!user.xCookies) return null;
+
+  try {
+    const cookies = JSON.parse(user.xCookies);
+    if (cookies.auth_token && cookies.ct0) {
+      return { auth_token: cookies.auth_token, ct0: cookies.ct0 };
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -149,7 +172,7 @@ async function authenticateTwikit(userId: string, user: NonNullable<Awaited<Retu
 
 /**
  * Get bookmarks with dual-provider support.
- * Priority: X API v2 (OAuth 2.0) → Twikit (cookies)
+ * Priority: X API v2 (OAuth 2.0) → Cookie-based GraphQL → Twikit
  */
 export async function getBookmarksDual(
   userId: string,
@@ -161,7 +184,7 @@ export async function getBookmarksDual(
     throw new Error('X/Twitter not connected');
   }
 
-  // Try X API v2 (direct)
+  // Try X API v2 (direct) — requires OAuth 2.0 tokens
   const accessToken = await ensureOAuth2Token(userId, user);
   if (accessToken && user.xUserId) {
     try {
@@ -172,10 +195,27 @@ export async function getBookmarksDual(
       };
     } catch (error) {
       if (error instanceof XApiError && error.status === 429) {
-        console.warn('X API rate limited, falling back to Twikit');
+        console.warn('X API rate limited, falling back to cookie-based');
       } else {
-        console.warn('X API bookmarks failed, falling back to Twikit:', error);
+        console.warn('X API bookmarks failed, falling back to cookie-based:', error);
       }
+    }
+  }
+
+  // Try cookie-based X GraphQL API (direct, no Python dependency)
+  const cookies = parseCookies(user);
+  if (cookies) {
+    try {
+      const result = await getCookieBookmarks(cookies, cursor || undefined, limit);
+      return {
+        data: result.data,
+        cursor: result.cursor,
+        has_more: result.has_more,
+        count: result.count,
+        provider: 'cookie',
+      };
+    } catch (error) {
+      console.warn('Cookie-based bookmarks failed, falling back to Twikit:', error);
     }
   }
 
@@ -201,7 +241,7 @@ export async function getBookmarksDual(
 
 /**
  * Get timeline with dual-provider support.
- * Priority: X API v2 (OAuth 2.0) → Twikit (cookies)
+ * Priority: X API v2 (OAuth 2.0) → Cookie-based → Twikit
  */
 export async function getTimelineDual(
   userId: string,
@@ -223,11 +263,11 @@ export async function getTimelineDual(
         provider: 'x_api',
       };
     } catch (error) {
-      console.warn('X API timeline failed, falling back to Twikit:', error);
+      console.warn('X API timeline failed, falling back:', error);
     }
   }
 
-  // Fall back to Twikit service
+  // Twikit service fallback
   const twikitAuthed = await authenticateTwikit(userId, user);
   if (twikitAuthed) {
     try {
@@ -249,7 +289,6 @@ export async function getTimelineDual(
 
 /**
  * Get following with dual-provider support.
- * Priority: X API v2 (OAuth 1.0a) → Twikit (cookies)
  */
 export async function getFollowingDual(
   userId: string,
@@ -257,16 +296,14 @@ export async function getFollowingDual(
   cursor?: string,
   limit: number = 100
 ) {
-  // Try X API v2 (OAuth 1.0a)
   if (hasOAuth1Credentials()) {
     try {
       return await getFollowing(targetUserId, limit, cursor || undefined);
     } catch (error) {
-      console.warn('X API following failed, falling back to Twikit:', error);
+      console.warn('X API following failed, falling back:', error);
     }
   }
 
-  // Fall back to Twikit service
   const user = await getUserAuthInfo(userId);
   if (user) {
     const twikitAuthed = await authenticateTwikit(userId, user);
@@ -284,7 +321,6 @@ export async function getFollowingDual(
 
 /**
  * Get followers with dual-provider support.
- * Priority: X API v2 (OAuth 1.0a) → Twikit (cookies)
  */
 export async function getFollowersDual(
   userId: string,
@@ -292,16 +328,14 @@ export async function getFollowersDual(
   cursor?: string,
   limit: number = 100
 ) {
-  // Try X API v2 (OAuth 1.0a)
   if (hasOAuth1Credentials()) {
     try {
       return await getFollowers(targetUserId, limit, cursor || undefined);
     } catch (error) {
-      console.warn('X API followers failed, falling back to Twikit:', error);
+      console.warn('X API followers failed, falling back:', error);
     }
   }
 
-  // Fall back to Twikit service
   const user = await getUserAuthInfo(userId);
   if (user) {
     const twikitAuthed = await authenticateTwikit(userId, user);
@@ -319,26 +353,23 @@ export async function getFollowersDual(
 
 /**
  * Get user's lists with dual-provider support.
- * Priority: X API v2 (OAuth 1.0a) → Twikit (cookies)
  */
 export async function getListsDual(
   userId: string,
   cursor?: string,
   limit: number = 100
 ) {
-  // Try X API v2 (OAuth 1.0a)
   if (hasOAuth1Credentials()) {
     const user = await getUserAuthInfo(userId);
     if (user?.xUserId) {
       try {
         return await getUserLists(user.xUserId, limit, cursor || undefined);
       } catch (error) {
-        console.warn('X API lists failed, falling back to Twikit:', error);
+        console.warn('X API lists failed, falling back:', error);
       }
     }
   }
 
-  // Fall back to Twikit service
   const user = await getUserAuthInfo(userId);
   if (user) {
     const twikitAuthed = await authenticateTwikit(userId, user);
@@ -356,8 +387,6 @@ export async function getListsDual(
 
 /**
  * Get media posts with dual-provider support.
- * Note: X API v2 doesn't have a media-only endpoint, so this relies on
- * filtering bookmarks for media content. Twikit service has a dedicated endpoint.
  */
 export async function getMediaDual(
   userId: string,
@@ -369,7 +398,28 @@ export async function getMediaDual(
     throw new Error('X/Twitter not connected');
   }
 
-  // For media, try Twikit first (it has a dedicated endpoint)
+  // Try cookie-based first (has better media support)
+  const cookies = parseCookies(user);
+  if (cookies) {
+    try {
+      const result = await getCookieBookmarks(cookies, cursor || undefined, limit);
+      // Filter for posts with media
+      const mediaPosts = result.data.filter((p) => p.media && p.media.length > 0);
+      return {
+        data: mediaPosts.map((p) => ({
+          ...transformCookiePost(p),
+        })),
+        cursor: result.cursor,
+        has_more: result.has_more,
+        count: mediaPosts.length,
+        provider: 'cookie',
+      };
+    } catch (error) {
+      console.warn('Cookie-based media failed, falling back:', error);
+    }
+  }
+
+  // Fall back to Twikit media endpoint
   const twikitAuthed = await authenticateTwikit(userId, user);
   if (twikitAuthed) {
     try {
@@ -391,7 +441,6 @@ export async function getMediaDual(
   if (accessToken && user.xUserId) {
     try {
       const result = await getBookmarksForUser(accessToken, user.xUserId, limit, cursor || undefined);
-      // Filter for posts with media
       const mediaPosts = result.data.filter((p) => p.media && p.media.length > 0);
       return {
         data: mediaPosts.map((p) => ({
@@ -427,6 +476,8 @@ export async function getMediaDual(
 /**
  * Full sync: Fetch all bookmarks from X/Twitter and upsert into database.
  * Uses dual-provider approach with automatic fallback.
+ * 
+ * Priority: X API v2 (OAuth 2.0) → Cookie-based GraphQL → Twikit
  */
 export async function syncBookmarksDual(userId: string): Promise<SyncResult> {
   const user = await getUserAuthInfo(userId);
@@ -442,7 +493,7 @@ export async function syncBookmarksDual(userId: string): Promise<SyncResult> {
   const maxPages = 10;
   const errors: string[] = [];
 
-  // Try X API v2 (direct) first
+  // ===== Method 1: X API v2 (direct) — requires OAuth 2.0 tokens =====
   const accessToken = await ensureOAuth2Token(userId, user);
   if (accessToken && user.xUserId) {
     try {
@@ -508,11 +559,88 @@ export async function syncBookmarksDual(userId: string): Promise<SyncResult> {
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'X API sync failed';
       errors.push(errorMsg);
-      console.warn('X API v2 sync failed, falling back to Twikit:', error);
+      console.warn('X API v2 sync failed, falling back to cookie-based:', error);
     }
   }
 
-  // Fall back to Twikit service
+  // ===== Method 2: Cookie-based X GraphQL API (direct, no Python dependency) =====
+  provider = 'cookie';
+  const cookies = parseCookies(user);
+  if (cookies) {
+    try {
+      allSynced = 0;
+      pageCount = 0;
+      hasMore = true;
+
+      const syncResult = await syncCookieBookmarks(cookies, maxPages, (page, count) => {
+        console.log(`Cookie sync page ${page}: ${count} bookmarks`);
+      });
+
+      for (const post of syncResult.posts) {
+        try {
+          const transformed = transformCookiePost(post);
+          await db.bookmark.upsert({
+            where: { xPostId: transformed.xPostId },
+            update: {
+              content: transformed.content,
+              xAuthorId: transformed.xAuthorId,
+              xAuthorName: transformed.xAuthorName,
+              xAuthorUsername: transformed.xAuthorUsername,
+              xAuthorAvatar: transformed.xAuthorAvatar,
+              mediaUrls: transformed.mediaUrls,
+              mediaTypes: transformed.mediaTypes,
+              replyCount: transformed.replyCount,
+              repostCount: transformed.repostCount,
+              likeCount: transformed.likeCount,
+              viewCount: transformed.viewCount,
+              bookmarkCount: transformed.bookmarkCount,
+              postedAt: transformed.postedAt,
+              isBookmarked: true,
+              source: 'cookie',
+            },
+            create: {
+              userId,
+              ...transformed,
+            },
+          });
+          allSynced++;
+        } catch (err) {
+          errors.push(`Failed to sync post ${post.id}: ${err}`);
+        }
+      }
+
+      if (allSynced > 0) {
+        // Update the user's X info if we didn't have it
+        if (!user.xUserId && syncResult.posts.length > 0) {
+          // Try to get user info
+          const userInfo = await getCookieUserInfo(cookies);
+          if (userInfo) {
+            await db.user.update({
+              where: { id: userId },
+              data: {
+                xUserId: userInfo.id,
+                xUsername: userInfo.username,
+              },
+            });
+          }
+        }
+
+        return {
+          syncedCount: allSynced,
+          pages: syncResult.totalPages,
+          hasMore: syncResult.hasMore,
+          provider: 'cookie',
+          errors,
+        };
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Cookie-based sync failed';
+      errors.push(errorMsg);
+      console.warn('Cookie-based sync failed, falling back to Twikit:', error);
+    }
+  }
+
+  // ===== Method 3: Twikit service (requires Python service running) =====
   provider = 'twikit';
   const twikitAuthed = await authenticateTwikit(userId, user);
   if (twikitAuthed) {
@@ -565,7 +693,9 @@ export async function syncBookmarksDual(userId: string): Promise<SyncResult> {
         if (!result.data || result.data.length === 0) break;
       }
 
-      return { syncedCount: allSynced, pages: pageCount, hasMore, provider, errors };
+      if (allSynced > 0) {
+        return { syncedCount: allSynced, pages: pageCount, hasMore, provider, errors };
+      }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Twikit sync failed';
       errors.push(errorMsg);

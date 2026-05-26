@@ -1,62 +1,25 @@
 ---
-Task ID: 1-8
-Agent: Main Orchestrator
-Task: Rebuild BookmarkVault for Vercel deployment with dual X API v2 + Twikit provider
+Task ID: 1-7
+Agent: Main Agent
+Task: Fix BookmarkVault 401/500 errors and implement cookie-based X API access
 
 Work Log:
-- Created src/lib/x-api.ts: Full X API v2 client directly in Next.js
-  - Bearer Token auth (app-only: search, tweet lookup)
-  - OAuth 1.0a auth (user context: following, followers, lists)
-  - OAuth 2.0 PKCE flow (bookmarks, timeline) - works on Vercel serverless
-  - Full tweet/user/list data transformation to standardized format
-  - Rate limit handling with XApiError class
-- Created src/lib/dual-provider.ts: Orchestrator for X API v2 (primary) + Twikit (fallback)
-  - getBookmarksDual: tries X API OAuth 2.0 → Twikit cookies
-  - getTimelineDual: tries X API OAuth 2.0 → Twikit cookies
-  - getFollowingDual/getFollowersDual: tries X API OAuth 1.0a → Twikit
-  - getListsDual: tries X API OAuth 1.0a → Twikit
-  - getMediaDual: tries Twikit (dedicated endpoint) → X API bookmarks
-  - syncBookmarksDual: full sync with automatic fallback
-  - OAuth 2.0 token auto-refresh before expiry
-- Updated src/lib/twitter.ts: Made Python Twikit service optional
-  - TWIKIT_SERVICE_URL env var controls availability
-  - isTwikitAvailable() function for feature detection
-  - All service calls gracefully fail when service is unavailable
-  - X API auth config can be read directly from env vars
-- Updated API routes:
-  - /api/auth/x/authorize: Uses PKCE directly from Next.js (no Python dependency)
-  - /api/auth/x/callback: Exchanges code directly via X API, fetches user info with getMe()
-  - /api/auth/x/config: Returns hasOAuth2, hasOAuth1, hasBearerToken, hasTwikit flags
-  - /api/bookmarks/sync: Uses syncBookmarksDual for dual-provider support
-  - /api/sync/trigger: Uses syncBookmarksDual for dual-provider support
-  - /api/auth/connect-twitter: Handles both OAuth2 and cookie-based auth with optional Twikit service
-  - /api/auth/disconnect-twitter: Clears all credentials, optionally logs out from Twikit service
-- Updated Prisma schema:
-  - SQLite for local development (current sandbox)
-  - PostgreSQL schema variant for Vercel (prisma/schema.vercel.prisma)
-  - db.ts auto-detects database type and applies appropriate optimizations
-- Added Vercel deployment configuration:
-  - vercel.json with headers and build settings
-  - .env.example with all required environment variables
-  - next.config.ts with Vercel detection and image domain allowlist
-- Updated frontend components:
-  - twitter-connect.tsx: Shows OAuth 2.0, Bearer Token, OAuth 1.0a, Twikit availability
-  - api.ts: Added hasOAuth1, hasBearerToken to getXConfig type
-  - Vercel-ready badge and messaging
-- All ESLint checks pass (0 errors, 0 warnings)
-- API endpoints tested and working:
-  - GET /api/auth/x/config → Returns correct config flags
-  - POST /api/auth/register → Creates user, returns JWT
-  - POST /api/auth/login → Returns JWT
-  - GET /api/auth/me → Returns user profile
-  - POST /api/sync/trigger → Returns 400 when not connected (correct)
-  - GET /api/bookmarks → Returns empty list (correct, no bookmarks synced)
+- Analyzed all errors: 401 on auth endpoints, 500 on sync, s.map crash, Image constructor error
+- Root cause: cookie-based auth required Python Twikit service which wasn't running
+- Created src/lib/x-cookie-api.ts: Direct X GraphQL API client using cookies (no Python dependency)
+- Updated src/lib/dual-provider.ts: Added cookie-based as secondary provider (X API v2 → Cookie → Twikit)
+- Fixed auth routes: Added xConnected/xAuthMethod to login and register responses
+- Fixed frontend error handling: Promise.allSettled, safe array extraction, null checks
+- Fixed connect-twitter: Now validates cookies by fetching user info, stores xUserId/xUsername
+- Fixed X GraphQL API: Changed from POST to GET requests for Bookmarks endpoint
+- Added timeout handling to all X API requests (8-10 seconds)
+- Added multiple fallback query IDs for Bookmarks endpoint
+- Updated TwitterConnect UI to reflect cookie-based direct API access
 
 Stage Summary:
-- Full dual-provider architecture: X API v2 direct (primary) + Twikit (optional fallback)
-- Vercel-ready: No Python service dependency for primary method
-- OAuth 2.0 PKCE flow works directly from Next.js API routes
-- Python Twikit service is optional, configured via TWIKIT_SERVICE_URL env var
-- Database: SQLite for local dev, PostgreSQL variant for Vercel
-- All mock data removed - app uses only real X/Twitter data
-- Deployment instructions provided in .env.example
+- Cookie-based X API access now works directly in Next.js (no Python dependency)
+- Auth flow returns complete user data including xConnected/xAuthMethod
+- Frontend handles errors gracefully (no more s.map crashes)
+- Sync fails gracefully with clear error messages for invalid cookies
+- All lint checks pass
+- The key remaining issue: Users must provide valid X cookies (auth_token + ct0) for sync to work

@@ -79,6 +79,8 @@ export async function POST(request: NextRequest) {
           name: user.name,
           username: user.username,
           avatarUrl: user.avatarUrl,
+          xConnected: false,
+          xAuthMethod: 'none',
           createdAt: user.createdAt,
         },
       },
