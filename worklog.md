@@ -97,3 +97,54 @@ Stage Summary:
 - Fix: Store PKCE state in database (domain-agnostic, always accessible)
 - Frontend: Handle iframe context by opening OAuth in new tab
 - All code compiles and lints cleanly
+
+---
+Task ID: 5
+Agent: Main Agent
+Task: Fix cookie-based X authentication — 401 "Invalid or expired token" error
+
+Work Log:
+- Diagnosed root cause: Cookie-based auth was failing due to multiple missing pieces:
+  1. Missing `twid` cookie — X now requires this for authentication (contains user ID)
+  2. Missing `X-Twitter-Auth-Type: OAuth2Session` header — required for cookie-based sessions
+  3. Outdated public bearer token — X rotates this periodically; added dynamic discovery
+  4. No `twid` support in frontend or backend
+- Rewrote src/lib/x-cookie-api.ts:
+  - Added dynamic bearer token discovery from x.com's JS bundles (with fallback)
+  - Added `twid` cookie support throughout (CookieAuth type, normalizeCookies, cookieFetch)
+  - Added `X-Twitter-Auth-Type: OAuth2Session` header to all cookie-based requests
+  - Added `validateCookiesDetailed()` with full diagnostics (status, message, twid info)
+  - Added `constructTwid()` helper to build twid from user ID
+  - Improved error messages to mention missing twid cookie
+- Updated src/app/api/auth/connect-twitter/route.ts:
+  - Now accepts optional `twid` cookie parameter
+  - Uses `validateCookiesDetailed()` for better diagnostics
+  - Auto-constructs twid from user ID if not provided
+  - Returns `needsTwid: true` when validation fails due to missing twid
+  - Stores twid in the JSON cookies object in database
+- Updated src/lib/dual-provider.ts:
+  - `parseCookies()` now includes twid from stored cookies
+  - Auto-constructs twid from user.xUserId if not stored
+- Updated src/components/twitter-connect.tsx:
+  - Added `twid` input field (marked as recommended)
+  - Shows `needsTwid` warning when X rejects cookies due to missing twid
+  - Updated instructions to explain all 3 required cookies
+  - Better error messages with twid-specific hints
+- Updated src/lib/api.ts:
+  - `connectTwitter()` now accepts optional `twid` parameter
+- Added src/app/api/auth/validate-cookies/route.ts:
+  - New endpoint to validate cookies without storing them
+  - Returns detailed diagnostics about cookie validity
+- Fixed src/lib/utils.ts:
+  - `parseJSON()` now validates that parsed arrays are actually arrays
+  - Prevents `s.map is not a function` errors
+- All lint checks pass
+
+Stage Summary:
+- Cookie-based auth now includes all 3 required cookies (auth_token, ct0, twid)
+- Added X-Twitter-Auth-Type: OAuth2Session header (critical for cookie auth)
+- Bearer token is now discovered dynamically from x.com's JS bundles
+- Frontend guides users to provide twid cookie with clear instructions
+- Auto-constructs twid from user ID when possible
+- Better error diagnostics throughout the auth chain
+- parseJSON now safely handles non-array parsed values

@@ -16,6 +16,7 @@ import {
   Info,
   Eye,
   EyeOff,
+  AlertTriangle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -32,8 +33,10 @@ export function TwitterConnect() {
   const { user, setAuth, token } = useAppStore();
   const [authToken, setAuthToken] = useState('');
   const [ct0, setCt0] = useState('');
+  const [twid, setTwid] = useState('');
   const [showAuthToken, setShowAuthToken] = useState(false);
   const [showCt0, setShowCt0] = useState(false);
+  const [showTwid, setShowTwid] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [error, setError] = useState('');
@@ -41,6 +44,7 @@ export function TwitterConnect() {
   const [xConfig, setXConfig] = useState<XConfig | null>(null);
   const [isLoadingConfig, setIsLoadingConfig] = useState(true);
   const [showOAuthOption, setShowOAuthOption] = useState(false);
+  const [needsTwid, setNeedsTwid] = useState(false);
 
   useEffect(() => {
     async function loadConfig() {
@@ -67,11 +71,12 @@ export function TwitterConnect() {
   const handleCookieConnect = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setNeedsTwid(false);
     setIsLoading(true);
     setStep('validating');
 
     try {
-      const result = await api.auth.connectTwitter(authToken, ct0);
+      const result = await api.auth.connectTwitter(authToken, ct0, twid || undefined);
 
       if (result.success) {
         // Refresh user data
@@ -92,10 +97,12 @@ export function TwitterConnect() {
         } catch (syncErr: any) {
           console.error('Initial sync failed:', syncErr);
           const syncMsg = syncErr?.message || '';
-          if (syncMsg.includes('401') || syncMsg.includes('Unauthorized')) {
-            toast.error('Sync failed — your cookies may have expired. Please reconnect.');
+          if (syncMsg.includes('401') || syncMsg.includes('Unauthorized') || syncMsg.includes('authentication failed')) {
+            toast.error('Sync failed — your cookies may have expired. Please reconnect with fresh cookies including the twid cookie.');
           } else if (syncMsg.includes('timeout') || syncMsg.includes('Timeout')) {
             toast.error('Sync timed out. You can retry from the home page.');
+          } else if (syncMsg.includes('twid')) {
+            toast.error('Missing twid cookie — please add the twid value and try again.');
           } else {
             toast.error('Sync failed: ' + (syncMsg || 'Could not fetch bookmarks. You can retry from the home page.'));
           }
@@ -106,7 +113,13 @@ export function TwitterConnect() {
         setStep('done');
       }
     } catch (err: any) {
-      setError(err.message || 'Failed to connect');
+      const errMsg = err?.message || 'Failed to connect';
+      setError(errMsg);
+      
+      // Check if the error is about missing twid
+      if (errMsg.toLowerCase().includes('twid')) {
+        setNeedsTwid(true);
+      }
       setStep('input');
     }
     setIsLoading(false);
@@ -202,9 +215,25 @@ export function TwitterConnect() {
                   <li>Open <a href="https://x.com" target="_blank" rel="noopener noreferrer" className="text-amber-400/80 underline inline-flex items-center gap-0.5">x.com<ExternalLink className="w-2.5 h-2.5" /></a> and log in with your X account</li>
                   <li>Open browser DevTools — press <kbd className="px-1 py-0.5 rounded bg-secondary/50 text-[10px] font-mono">F12</kbd> or <kbd className="px-1 py-0.5 rounded bg-secondary/50 text-[10px] font-mono">Cmd+Option+I</kbd></li>
                   <li>Go to <strong>Application</strong> tab → <strong>Cookies</strong> → <code className="px-1 py-0.5 rounded bg-secondary/50 text-amber-400/80 font-mono text-[10px]">https://x.com</code></li>
-                  <li>Find <code className="px-1 py-0.5 rounded bg-secondary/50 text-amber-400/80 font-mono text-[10px]">auth_token</code> — copy the value and paste below</li>
-                  <li>Find <code className="px-1 py-0.5 rounded bg-secondary/50 text-amber-400/80 font-mono text-[10px]">ct0</code> — copy the value and paste below</li>
+                  <li>Find and copy these 3 cookies:</li>
                 </ol>
+                <div className="mt-2 space-y-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400/60"></span>
+                    <code className="px-1 py-0.5 rounded bg-secondary/50 text-amber-400/80 font-mono text-[10px]">auth_token</code>
+                    <span className="text-[10px] text-red-400/60 font-medium">required</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400/60"></span>
+                    <code className="px-1 py-0.5 rounded bg-secondary/50 text-amber-400/80 font-mono text-[10px]">ct0</code>
+                    <span className="text-[10px] text-red-400/60 font-medium">required</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400/60"></span>
+                    <code className="px-1 py-0.5 rounded bg-secondary/50 text-amber-400/80 font-mono text-[10px]">twid</code>
+                    <span className="text-[10px] text-amber-400/60 font-medium">recommended (looks like u=123456 or %7B...%7D)</span>
+                  </div>
+                </div>
                 <p className="text-[9px] text-muted-foreground/40 mt-2">
                   Your cookies are stored locally and encrypted. They are never shared with third parties.
                 </p>
@@ -212,7 +241,9 @@ export function TwitterConnect() {
 
               {/* auth_token input */}
               <div>
-                <label className="text-xs text-muted-foreground mb-1 block font-medium">auth_token</label>
+                <label className="text-xs text-muted-foreground mb-1 block font-medium">
+                  auth_token <span className="text-red-400/60">*</span>
+                </label>
                 <div className="relative">
                   <input
                     type={showAuthToken ? 'text' : 'password'}
@@ -234,7 +265,9 @@ export function TwitterConnect() {
 
               {/* ct0 input */}
               <div>
-                <label className="text-xs text-muted-foreground mb-1 block font-medium">ct0</label>
+                <label className="text-xs text-muted-foreground mb-1 block font-medium">
+                  ct0 <span className="text-red-400/60">*</span>
+                </label>
                 <div className="relative">
                   <input
                     type={showCt0 ? 'text' : 'password'}
@@ -254,14 +287,59 @@ export function TwitterConnect() {
                 </div>
               </div>
 
+              {/* twid input */}
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block font-medium">
+                  twid <span className="text-amber-400/60 font-normal">(recommended)</span>
+                </label>
+                <div className="relative">
+                  <input
+                    type={showTwid ? 'text' : 'password'}
+                    placeholder="Paste your twid cookie value (e.g., u=1234567890)"
+                    value={twid}
+                    onChange={(e) => { setTwid(e.target.value); setNeedsTwid(false); }}
+                    className={`w-full px-3 py-2.5 pr-9 rounded-lg bg-secondary/50 border text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-amber-500/20 transition-all font-mono text-xs ${
+                      needsTwid ? 'border-amber-500/50 ring-1 ring-amber-500/20' : 'border-border/30 focus:border-amber-500/30'
+                    }`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowTwid(!showTwid)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/40 hover:text-muted-foreground/70 transition-colors"
+                  >
+                    {showTwid ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+                {needsTwid && (
+                  <motion.p
+                    initial={{ opacity: 0, y: -5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="text-[10px] text-amber-400/80 mt-1 flex items-center gap-1"
+                  >
+                    <AlertTriangle className="w-3 h-3" />
+                    X now requires the twid cookie. Please copy it from your browser cookies.
+                  </motion.p>
+                )}
+                <p className="text-[9px] text-muted-foreground/30 mt-1">
+                  The twid cookie contains your user ID. X may reject requests without it. If you skip this, we&apos;ll try to construct it from your user ID after validation.
+                </p>
+              </div>
+
               {error && (
                 <motion.div
                   initial={{ opacity: 0, y: -5 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="flex items-center gap-2 p-2.5 rounded-lg bg-red-500/10 border border-red-500/20 text-xs text-red-400"
+                  className="flex items-start gap-2 p-2.5 rounded-lg bg-red-500/10 border border-red-500/20 text-xs text-red-400"
                 >
-                  <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
-                  {error}
+                  <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p>{error}</p>
+                    {error.toLowerCase().includes('twid') && !twid && (
+                      <p className="mt-1 text-[10px] text-amber-400/70">
+                        💡 Tip: Add the twid cookie above — it&apos;s now required by X for authentication.
+                      </p>
+                    )}
+                  </div>
                 </motion.div>
               )}
 

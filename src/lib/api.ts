@@ -64,10 +64,10 @@ export const auth = {
     }),
   me: () => apiFetch<any>('/auth/me'),
   logout: () => apiFetch<void>('/auth/logout', { method: 'POST' }),
-  connectTwitter: (authToken: string, ct0: string) =>
-    apiFetch<{ success: boolean; username?: string }>('/auth/connect-twitter', {
+  connectTwitter: (authToken: string, ct0: string, twid?: string) =>
+    apiFetch<{ success: boolean; username?: string; needsTwid?: boolean }>('/auth/connect-twitter', {
       method: 'POST',
-      body: JSON.stringify({ authToken, ct0 }),
+      body: JSON.stringify({ authToken, ct0, twid }),
     }),
   disconnectTwitter: () =>
     apiFetch<{ success: boolean }>('/auth/disconnect-twitter', {

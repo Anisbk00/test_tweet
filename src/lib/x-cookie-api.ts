@@ -1,7 +1,7 @@
 /**
  * X Cookie-Based API Client — Direct access to X's internal GraphQL API
  *
- * Uses auth_token + ct0 cookies to make authenticated requests to X's
+ * Uses auth_token + ct0 + twid cookies to make authenticated requests to X's
  * internal API endpoints (the same ones x.com's frontend uses).
  *
  * This eliminates the need for the Python Twikit service for cookie-based auth.
@@ -12,82 +12,35 @@
 // Configuration
 // ============================================================
 
-// Public bearer token used by x.com's web client
-const X_PUBLIC_BEARER = 'AAAAAAAAAAAAAAAAAAAAAFQODgEAAAAAVHTp76lzh3rFzcHbmHVvQxYYpTw%3DckAlMinMpkYqZ2M5VsnCEq4u0LkCE7ieFgEGvGmPdKkxWnoDNT';
+// Public bearer token used by x.com's web client — we discover it dynamically
+// Fallback: the well-known bearer token (may be outdated)
+const FALLBACK_BEARER = 'AAAAAAAAAAAAAAAAAAAAAFQODgEAAAAAVHTp76lzh3rFzcHbmHVvQxYYpTw%3DckAlMinMpkYqZ2M5VsnCEq4u0LkCE7ieFgEGvGmPdKkxWnoDNT';
 
 const X_API_BASE = 'https://x.com/i/api/graphql';
 
 // ============================================================
-// Query ID Cache
+// Dynamic Bearer Token Discovery
 // ============================================================
 
-let cachedQueryIds: Record<string, string> = {};
-let lastQueryIdFetch = 0;
-const QUERY_ID_CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours
-
-// Fallback query IDs (these change when X updates their frontend)
-// We'll try to discover fresh ones from x.com's JS bundle
-// Multiple fallbacks for Bookmarks since it's the most important
-const FALLBACK_QUERY_IDS: Record<string, string> = {
-  Bookmarks: 'S7HmUxJnLGVCLZDi9E5YA',
-  UserByScreenName: 'G3KGOASz96M-Qu0nwmGXNg',
-  UserByRestId: 'tD8zKvQzwY3kdx5yz6YmOw',
-};
-
-// More recent fallback query IDs (updated periodically as X rotates them)
-const RECENT_FALLBACK_QUERY_IDS: Record<string, string> = {
-  Bookmarks: 'rcC9M2XIfMO1HQLZbWCirg',
-  UserByScreenName: 'b4Mf5AEpAlLmMKeewtLJcg',
-  UserByRestId: 'D7CsIUMwO-dLMNWxWXIIMA',
-};
-
-// Alternative query IDs to try if the primary one doesn't work
-const ALTERNATIVE_BOOKMARKS_IDS = [
-  'rcC9M2XIfMO1HQLZbWCirg',
-  'S7HmUxJnLGVCLZDi9E5YA',
-  'R15ObwordQG7Y6WmL7QP-A',
-  'XjKM5VwkyQJmEuwSVeX9hA',
-  'W8Srw8txY1m7guZd7KHpA',
-  'C1SbjmdO0K1q9R2wm4JAtg',
-];
+let cachedBearerToken: string | null = null;
+let lastBearerFetch = 0;
+const BEARER_CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours
 
 /**
- * Discover GraphQL query IDs from x.com's JavaScript bundle.
- * These IDs change when X updates their frontend code.
+ * Discover the public bearer token from x.com's JavaScript bundles.
+ * X rotates this token periodically when they update their frontend.
  */
-const DISCOVER_TIMEOUT_MS = 10000; // 10 seconds total for discovery
-
-/**
- * Timeout-safe wrapper for discoverQueryIds.
- * If discovery takes too long (e.g., on serverless cold starts), fall back to cached or static IDs.
- */
-async function discoverQueryIdsSafe(): Promise<Record<string, string>> {
-  try {
-    const result = await Promise.race([
-      discoverQueryIds(),
-      new Promise<Record<string, string>>((_, reject) =>
-        setTimeout(() => reject(new Error('Query ID discovery timed out')), DISCOVER_TIMEOUT_MS)
-      ),
-    ]);
-    return result;
-  } catch (error) {
-    console.warn('[x-cookie-api] discoverQueryIds failed or timed out, using fallback IDs:', error instanceof Error ? error.message : error);
-    // Merge all fallback sources: cached > recent > original
-    return { ...FALLBACK_QUERY_IDS, ...RECENT_FALLBACK_QUERY_IDS, ...cachedQueryIds };
-  }
-}
-
-async function discoverQueryIds(): Promise<Record<string, string>> {
-  // If cached and fresh, return
-  if (Object.keys(cachedQueryIds).length > 0 && Date.now() - lastQueryIdFetch < QUERY_ID_CACHE_TTL) {
-    return cachedQueryIds;
+async function discoverBearerToken(): Promise<string> {
+  // Return cached if fresh
+  if (cachedBearerToken && Date.now() - lastBearerFetch < BEARER_CACHE_TTL) {
+    return cachedBearerToken;
   }
 
   try {
-    // Fetch x.com's main page to find JS bundle URLs
+    // Fetch x.com's main page
     const response = await fetch('https://x.com', {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.5',
       },
@@ -120,10 +73,144 @@ async function discoverQueryIds(): Promise<Record<string, string>> {
       throw new Error('Could not find JS bundle URLs');
     }
 
-    const queryIds: Record<string, string> = {};
+    // Search through JS bundles for the bearer token
+    // The bearer token is a base64-encoded string that starts with "AAAAA"
+    // It's typically in the "main" bundle
+    const bundlesToSearch = jsUrls.slice(0, 8);
 
-    // Search through JS bundles for query IDs
-    // We'll search up to 5 bundles max to avoid taking too long
+    for (const jsUrl of bundlesToSearch) {
+      try {
+        const jsResponse = await fetch(jsUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          },
+          signal: AbortSignal.timeout(8000),
+        });
+
+        if (!jsResponse.ok) continue;
+
+        const js = await jsResponse.text();
+
+        // Pattern 1: Bearer token in quotes — typically looks like "AAAAAAAAAAAAAAAAAAAAA..."
+        const bearerMatch = js.match(/"((?:A{5,}[A-Za-z0-9%]+))"/);
+        if (bearerMatch && bearerMatch[1].length > 50) {
+          cachedBearerToken = bearerMatch[1];
+          lastBearerFetch = Date.now();
+          console.log('[x-cookie-api] Discovered bearer token from JS bundle');
+          return cachedBearerToken;
+        }
+
+        // Pattern 2: bearerToken= or authorization:"Bearer ..."
+        const bearerMatch2 = js.match(/(?:bearerToken|authorization)["\s:=]+"([^"]+)"/i);
+        if (bearerMatch2) {
+          cachedBearerToken = bearerMatch2[1].replace(/^Bearer\s+/i, '');
+          lastBearerFetch = Date.now();
+          console.log('[x-cookie-api] Discovered bearer token from JS bundle (pattern 2)');
+          return cachedBearerToken;
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    throw new Error('Could not find bearer token in JS bundles');
+  } catch (error) {
+    console.warn('[x-cookie-api] Failed to discover bearer token, using fallback:', error);
+    cachedBearerToken = FALLBACK_BEARER;
+    lastBearerFetch = Date.now();
+    return FALLBACK_BEARER;
+  }
+}
+
+// ============================================================
+// Query ID Cache
+// ============================================================
+
+let cachedQueryIds: Record<string, string> = {};
+let lastQueryIdFetch = 0;
+const QUERY_ID_CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours
+
+// Fallback query IDs (these change when X updates their frontend)
+const FALLBACK_QUERY_IDS: Record<string, string> = {
+  Bookmarks: 'S7HmUxJnLGVCLZDi9E5YA',
+  UserByScreenName: 'G3KGOASz96M-Qu0nwmGXNg',
+  UserByRestId: 'tD8zKvQzwY3kdx5yz6YmOw',
+};
+
+// More recent fallback query IDs
+const RECENT_FALLBACK_QUERY_IDS: Record<string, string> = {
+  Bookmarks: 'rcC9M2XIfMO1HQLZbWCirg',
+  UserByScreenName: 'b4Mf5AEpAlLmMKeewtLJcg',
+  UserByRestId: 'D7CsIUMwO-dLMNWxWXIIMA',
+};
+
+// Alternative query IDs to try if the primary one doesn't work
+const ALTERNATIVE_BOOKMARKS_IDS = [
+  'rcC9M2XIfMO1HQLZbWCirg',
+  'S7HmUxJnLGVCLZDi9E5YA',
+  'R15ObwordQG7Y6WmL7QP-A',
+  'XjKM5VwkyQJmEuwSVeX9hA',
+  'W8Srw8txY1m7guZd7KHpA',
+  'C1SbjmdO0K1q9R2wm4JAtg',
+];
+
+const DISCOVER_TIMEOUT_MS = 10000;
+
+async function discoverQueryIdsSafe(): Promise<Record<string, string>> {
+  try {
+    const result = await Promise.race([
+      discoverQueryIds(),
+      new Promise<Record<string, string>>((_, reject) =>
+        setTimeout(() => reject(new Error('Query ID discovery timed out')), DISCOVER_TIMEOUT_MS)
+      ),
+    ]);
+    return result;
+  } catch (error) {
+    console.warn('[x-cookie-api] discoverQueryIds failed or timed out, using fallback IDs:', error instanceof Error ? error.message : error);
+    return { ...FALLBACK_QUERY_IDS, ...RECENT_FALLBACK_QUERY_IDS, ...cachedQueryIds };
+  }
+}
+
+async function discoverQueryIds(): Promise<Record<string, string>> {
+  if (Object.keys(cachedQueryIds).length > 0 && Date.now() - lastQueryIdFetch < QUERY_ID_CACHE_TTL) {
+    return cachedQueryIds;
+  }
+
+  try {
+    const response = await fetch('https://x.com', {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+      },
+      redirect: 'follow',
+      signal: AbortSignal.timeout(8000),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch x.com: ${response.status}`);
+    }
+
+    const html = await response.text();
+
+    const jsUrls: string[] = [];
+    const jsRegex = /https:\/\/abs\.twimg\.com\/responsive-web\/client-web[^\s"']+/g;
+    let match;
+    while ((match = jsRegex.exec(html)) !== null) {
+      jsUrls.push(match[0]);
+    }
+
+    const altRegex = /"https:\/\/abs\.twimg\.com\/responsive-web\/client-web\/[^"]+\.js"/g;
+    while ((match = altRegex.exec(html)) !== null) {
+      const url = match[0].replace(/"/g, '');
+      if (!jsUrls.includes(url)) jsUrls.push(url);
+    }
+
+    if (jsUrls.length === 0) {
+      throw new Error('Could not find JS bundle URLs');
+    }
+
+    const queryIds: Record<string, string> = {};
     const bundlesToSearch = jsUrls.slice(0, 5);
 
     for (const jsUrl of bundlesToSearch) {
@@ -139,16 +226,13 @@ async function discoverQueryIds(): Promise<Record<string, string>> {
 
         const js = await jsResponse.text();
 
-        // Search for Bookmarks query ID
         if (!queryIds.Bookmarks) {
-          // Pattern: queryId:"XXXX",operationName:"Bookmarks"
           const bookmarksMatch = js.match(/queryId:"([^"]+)"[^}]*operationName:"Bookmarks"/);
           if (bookmarksMatch) {
             queryIds.Bookmarks = bookmarksMatch[1];
           }
         }
 
-        // Search for UserByScreenName query ID
         if (!queryIds.UserByScreenName) {
           const userMatch = js.match(/queryId:"([^"]+)"[^}]*operationName:"UserByScreenName"/);
           if (userMatch) {
@@ -156,7 +240,6 @@ async function discoverQueryIds(): Promise<Record<string, string>> {
           }
         }
 
-        // Search for UserByRestId query ID
         if (!queryIds.UserByRestId) {
           const userRestMatch = js.match(/queryId:"([^"]+)"[^}]*operationName:"UserByRestId"/);
           if (userRestMatch) {
@@ -164,17 +247,14 @@ async function discoverQueryIds(): Promise<Record<string, string>> {
           }
         }
 
-        // Early exit if we found all query IDs
         if (queryIds.Bookmarks && queryIds.UserByScreenName && queryIds.UserByRestId) {
           break;
         }
       } catch {
-        // Skip failed bundle fetch
         continue;
       }
     }
 
-    // Merge with all fallbacks for any missing IDs (recent fallbacks take precedence over old ones)
     const result = { ...FALLBACK_QUERY_IDS, ...RECENT_FALLBACK_QUERY_IDS, ...queryIds };
 
     if (Object.keys(result).length > 0) {
@@ -185,7 +265,6 @@ async function discoverQueryIds(): Promise<Record<string, string>> {
     return result;
   } catch (error) {
     console.warn('[x-cookie-api] Failed to discover query IDs, using fallbacks:', error);
-    // Return merged fallbacks: cached > recent > original
     return { ...FALLBACK_QUERY_IDS, ...RECENT_FALLBACK_QUERY_IDS, ...cachedQueryIds };
   }
 }
@@ -197,6 +276,7 @@ async function discoverQueryIds(): Promise<Record<string, string>> {
 export interface CookieAuth {
   auth_token: string;
   ct0: string;
+  twid?: string; // Optional but recommended — X now requires this
 }
 
 export interface CookieBookmark {
@@ -240,23 +320,36 @@ export interface CookieUserInfo {
   avatar_url: string;
 }
 
+export interface CookieValidationResult {
+  valid: boolean;
+  user: CookieUserInfo | null;
+  error?: string;
+  details?: {
+    auth_token_length: number;
+    ct0_length: number;
+    twid_provided: boolean;
+    bearer_token_source: string;
+    api_status: number;
+    api_message: string;
+  };
+}
+
 // ============================================================
-// Core Request Method
+// Cookie Normalization
 // ============================================================
 
 /**
  * Normalize cookie values — trim whitespace, decode URL-encoding, etc.
- * The ct0 cookie is often URL-encoded in browser DevTools display.
  */
 export function normalizeCookies(cookies: CookieAuth): CookieAuth {
   let auth_token = cookies.auth_token.trim();
   let ct0 = cookies.ct0.trim();
+  let twid = cookies.twid?.trim();
 
   // URL-decode ct0 if it's encoded (e.g. %3D → =)
   try {
     if (ct0.includes('%')) {
       const decoded = decodeURIComponent(ct0);
-      // Only use decoded if it looks like a valid CSRF token (alphanumeric + =)
       if (/^[a-zA-Z0-9|=]+$/.test(decoded)) {
         ct0 = decoded;
       }
@@ -277,8 +370,31 @@ export function normalizeCookies(cookies: CookieAuth): CookieAuth {
     // If decode fails, use the original
   }
 
-  return { auth_token, ct0 };
+  // Same for twid
+  if (twid) {
+    try {
+      if (twid.includes('%')) {
+        twid = decodeURIComponent(twid);
+      }
+    } catch {
+      // If decode fails, use the original
+    }
+  }
+
+  return { auth_token, ct0, twid };
 }
+
+/**
+ * Construct a twid cookie value from a user ID.
+ * Format: u=1234567890 (URL-encoded: u%3D1234567890)
+ */
+export function constructTwid(userId: string): string {
+  return `u=${userId}`;
+}
+
+// ============================================================
+// Core Request Method
+// ============================================================
 
 async function cookieFetch<T>(
   path: string,
@@ -294,6 +410,9 @@ async function cookieFetch<T>(
   // Normalize cookie values before using them
   const normalized = normalizeCookies(cookies);
 
+  // Get the bearer token (discovered dynamically or fallback)
+  const bearerToken = await discoverBearerToken();
+
   const url = new URL(`${X_API_BASE}${path}`);
 
   // Add query parameters
@@ -301,12 +420,19 @@ async function cookieFetch<T>(
     if (v !== undefined && v !== '') url.searchParams.set(k, v);
   });
 
+  // Build cookie string — include twid if available
+  let cookieStr = `auth_token=${normalized.auth_token}; ct0=${normalized.ct0}`;
+  if (normalized.twid) {
+    cookieStr += `; twid=${encodeURIComponent(normalized.twid)}`;
+  }
+
   const fetchOptions: RequestInit = {
     method,
     headers: {
-      'Authorization': `Bearer ${X_PUBLIC_BEARER}`,
-      'Cookie': `auth_token=${normalized.auth_token}; ct0=${normalized.ct0}`,
+      'Authorization': `Bearer ${bearerToken}`,
+      'Cookie': cookieStr,
       'X-CSRF-TOKEN': normalized.ct0,
+      'X-Twitter-Auth-Type': 'OAuth2Session', // CRITICAL: Required for cookie-based auth
       'X-Twitter-Active-User': 'yes',
       'X-Twitter-Client-Language': 'en',
       'Content-Type': 'application/json',
@@ -324,9 +450,9 @@ async function cookieFetch<T>(
     fetchOptions.body = JSON.stringify(body);
   }
 
-  // Add timeout (10 seconds)
+  // Add timeout (15 seconds)
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 10000);
+  const timeout = setTimeout(() => controller.abort(), 15000);
   fetchOptions.signal = controller.signal;
 
   let response: Response;
@@ -357,23 +483,28 @@ async function cookieFetch<T>(
       detail = errorBody.substring(0, 200);
     }
     
-    const normalized = normalizeCookies(cookies);
-    const authLength = normalized.auth_token.length;
-    const ct0Length = normalized.ct0.length;
+    const normCookies = normalizeCookies(cookies);
+    const authLength = normCookies.auth_token.length;
+    const ct0Length = normCookies.ct0.length;
     const ct0HasPercent = cookies.ct0.includes('%');
+    const hasTwid = !!normCookies.twid;
     
     let hint = '';
+    if (!hasTwid) {
+      hint += ' WARNING: No twid cookie provided. X now requires the twid cookie for authentication. Please copy the twid cookie value from your browser (it starts with u= or %7B).';
+    }
     if (ct0HasPercent) {
-      hint = ' NOTE: Your ct0 cookie contained URL-encoded characters (%), which were auto-decoded. If this still fails, try copying the raw ct0 value without any % encoding.';
+      hint += ' NOTE: Your ct0 cookie contained URL-encoded characters (%), which were auto-decoded.';
     }
     if (authLength < 20 || ct0Length < 20) {
       hint += ' WARNING: One of your cookie values seems too short — make sure you copied the complete value.';
     }
     
-    console.error(`[Cookie Auth Failed] Status: ${response.status}, auth_token length: ${authLength}, ct0 length: ${ct0Length}, URL-encoded ct0: ${ct0HasPercent}, Response: ${detail}`);
+    console.error(`[Cookie Auth Failed] Status: ${response.status}, auth_token length: ${authLength}, ct0 length: ${ct0Length}, twid provided: ${hasTwid}, URL-encoded ct0: ${ct0HasPercent}, Bearer source: ${cachedBearerToken ? 'discovered' : 'fallback'}, Response: ${detail}`);
     
     throw new Error(
       `Cookie authentication failed (HTTP ${response.status}). ${detail ? `X says: "${detail}". ` : ''}` +
+      `${!hasTwid ? 'Missing twid cookie — this is now required by X. ' : ''}` +
       `Your cookies may have expired. Please reconnect your X account with fresh cookies.${hint}`
     );
   }
@@ -437,42 +568,111 @@ const USER_FEATURES = {
 // ============================================================
 
 /**
+ * Validate cookies with detailed diagnostics.
+ * Returns validation result with user info if valid.
+ */
+export async function validateCookiesDetailed(cookies: CookieAuth): Promise<CookieValidationResult> {
+  const normalized = normalizeCookies(cookies);
+  const bearerToken = await discoverBearerToken();
+  
+  const details = {
+    auth_token_length: normalized.auth_token.length,
+    ct0_length: normalized.ct0.length,
+    twid_provided: !!normalized.twid,
+    bearer_token_source: cachedBearerToken ? 'discovered' : 'fallback',
+    api_status: 0,
+    api_message: '',
+  };
+
+  // First, try the simple v1.1 endpoint for user validation
+  try {
+    let cookieStr = `auth_token=${normalized.auth_token}; ct0=${normalized.ct0}`;
+    if (normalized.twid) {
+      cookieStr += `; twid=${encodeURIComponent(normalized.twid)}`;
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+
+    const response = await fetch('https://api.x.com/1.1/account/verify_credentials.json', {
+      headers: {
+        'Authorization': `Bearer ${bearerToken}`,
+        'Cookie': cookieStr,
+        'X-CSRF-TOKEN': normalized.ct0,
+        'X-Twitter-Auth-Type': 'OAuth2Session',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        'Origin': 'https://x.com',
+        'Referer': 'https://x.com/',
+      },
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeout);
+
+    details.api_status = response.status;
+
+    if (response.ok) {
+      const data = await response.json();
+      const userInfo: CookieUserInfo = {
+        id: data.id_str || data.id?.toString(),
+        name: data.name,
+        username: data.screen_name,
+        avatar_url: data.profile_image_url_https?.replace('_normal', '_bigger') || '',
+      };
+
+      return {
+        valid: true,
+        user: userInfo,
+        details,
+      };
+    }
+
+    // Parse error response
+    const errorBody = await response.text().catch(() => '');
+    let errorMsg = `HTTP ${response.status}`;
+    try {
+      const parsed = JSON.parse(errorBody);
+      errorMsg = parsed?.errors?.[0]?.message || parsed?.detail || errorMsg;
+    } catch {
+      errorMsg = errorBody.substring(0, 100) || errorMsg;
+    }
+    details.api_message = errorMsg;
+
+    // If 401/403 and no twid was provided, try with a constructed twid
+    if ((response.status === 401 || response.status === 403) && !normalized.twid) {
+      return {
+        valid: false,
+        user: null,
+        error: `Cookie authentication failed (${errorMsg}). Missing twid cookie — X now requires all three cookies (auth_token, ct0, twid). Please copy the twid value from your browser cookies.`,
+        details,
+      };
+    }
+
+    return {
+      valid: false,
+      user: null,
+      error: `Cookie authentication failed: ${errorMsg}. Your cookies may have expired — please reconnect with fresh cookies.`,
+      details,
+    };
+  } catch (error) {
+    details.api_message = error instanceof Error ? error.message : 'Unknown error';
+    return {
+      valid: false,
+      user: null,
+      error: `Could not reach X API: ${details.api_message}. Check your network connection.`,
+      details,
+    };
+  }
+}
+
+/**
  * Validate cookies by fetching the current user info.
  * Returns user info if cookies are valid, null otherwise.
  */
 export async function validateCookies(cookies: CookieAuth): Promise<CookieUserInfo | null> {
   try {
-    const queryIds = await discoverQueryIdsSafe();
-    const queryId = queryIds.UserByScreenName || queryIds.UserByRestId;
-
-    if (!queryId) {
-      // Fallback: try to get user info using the viewer endpoint
-      const result = await cookieFetch<any>(
-        `/${FALLBACK_QUERY_IDS.UserByRestId}/UserByRestId`,
-        cookies,
-        {
-          params: {
-            variables: JSON.stringify({ userId: null }),
-            features: JSON.stringify(USER_FEATURES),
-          },
-        }
-      );
-      return extractUserInfo(result);
-    }
-
-    // Try UserByRestId with "me" to get current user
-    const result = await cookieFetch<any>(
-      `/${queryId}/UserByRestId`,
-      cookies,
-      {
-        params: {
-          variables: JSON.stringify({ userId: 'me' }),
-          features: JSON.stringify(USER_FEATURES),
-        },
-      }
-    );
-
-    return extractUserInfo(result);
+    const result = await validateCookiesDetailed(cookies);
+    return result.valid ? result.user : null;
   } catch (error) {
     console.error('Cookie validation failed:', error);
     return null;
@@ -487,22 +687,26 @@ export async function getCookieUserInfo(cookies: CookieAuth): Promise<CookieUser
   try {
     // Normalize cookies first
     const normalized = normalizeCookies(cookies);
+    const bearerToken = await discoverBearerToken();
     
-    // Try the viewer endpoint first
-    const queryIds = await discoverQueryIdsSafe();
-    const queryId = queryIds.UserByRestId || FALLBACK_QUERY_IDS.UserByRestId;
+    // Build cookie string — include twid if available
+    let cookieStr = `auth_token=${normalized.auth_token}; ct0=${normalized.ct0}`;
+    if (normalized.twid) {
+      cookieStr += `; twid=${encodeURIComponent(normalized.twid)}`;
+    }
 
-    // Try getting user info from the /1.1/account/verify_credentials.json endpoint
-    // This is more reliable than the GraphQL endpoint
+    // Try the v1.1 verify_credentials endpoint first (more reliable)
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 8000);
       
       const response = await fetch('https://api.x.com/1.1/account/verify_credentials.json', {
         headers: {
-          'Authorization': `Bearer ${X_PUBLIC_BEARER}`,
-          'Cookie': `auth_token=${normalized.auth_token}; ct0=${normalized.ct0}`,
+          'Authorization': `Bearer ${bearerToken}`,
+          'Cookie': cookieStr,
           'X-CSRF-TOKEN': normalized.ct0,
+          'X-Twitter-Auth-Type': 'OAuth2Session',
+          'X-Twitter-Active-User': 'yes',
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
           'Origin': 'https://x.com',
           'Referer': 'https://x.com/',
@@ -521,11 +725,16 @@ export async function getCookieUserInfo(cookies: CookieAuth): Promise<CookieUser
           avatar_url: data.profile_image_url_https?.replace('_normal', '_bigger') || '',
         };
       }
-    } catch {
-      // Fall through to GraphQL approach
+      
+      console.warn(`[x-cookie-api] verify_credentials returned ${response.status}, trying GraphQL fallback`);
+    } catch (err) {
+      console.warn('[x-cookie-api] verify_credentials failed, trying GraphQL fallback:', err);
     }
 
     // Fallback: GraphQL approach
+    const queryIds = await discoverQueryIdsSafe();
+    const queryId = queryIds.UserByRestId || FALLBACK_QUERY_IDS.UserByRestId;
+
     const result = await cookieFetch<any>(
       `/${queryId}/UserByRestId`,
       cookies,
@@ -688,7 +897,6 @@ export async function syncCookieBookmarks(
 
 function extractUserInfo(data: any): CookieUserInfo | null {
   try {
-    // Try different response structures
     const user = data?.data?.user?.result || data?.data?.user || data?.user?.result;
 
     if (!user) return null;
@@ -711,7 +919,6 @@ function parseBookmarksResponse(data: any): CookiePaginatedResponse {
   let hasMore = false;
 
   try {
-    // Navigate the complex GraphQL response structure
     const instructions =
       data?.data?.viewer?.bookmarks_timeline?.timeline?.instructions || [];
 
@@ -721,14 +928,12 @@ function parseBookmarksResponse(data: any): CookiePaginatedResponse {
       if (instruction.type === 'TimelineAddEntries') {
         entries = instruction.entries || [];
       } else if (instruction.type === 'TimelineAddToModule') {
-        // Sometimes entries come in a module
         const moduleItems = instruction.moduleItems || [];
         entries = entries.concat(moduleItems);
       }
     }
 
     for (const entry of entries) {
-      // Check for cursor entries (pagination)
       const entryContent = entry?.content;
       if (entryContent?.cursorType === 'Bottom' || entryContent?.cursorType === 'Top') {
         if (entryContent.cursorType === 'Bottom') {
@@ -738,7 +943,6 @@ function parseBookmarksResponse(data: any): CookiePaginatedResponse {
         continue;
       }
 
-      // Extract tweet from entry
       try {
         const tweetResult =
           entryContent?.itemContent?.tweet_results?.result ||
@@ -746,7 +950,6 @@ function parseBookmarksResponse(data: any): CookiePaginatedResponse {
 
         if (!tweetResult) continue;
 
-        // Handle tweet with visibility results (retweet wrapper)
         const tweet = tweetResult.__typename === 'TweetWithVisibilityResults'
           ? tweetResult.tweet
           : tweetResult;
@@ -756,7 +959,6 @@ function parseBookmarksResponse(data: any): CookiePaginatedResponse {
                           tweet?.core?.user_results?.result ||
                           tweet?.author;
 
-        // Process media
         const media: CookieBookmark['media'] = [];
         const mediaEntries = legacy?.entities?.media || legacy?.extended_entities?.media || [];
 
@@ -768,7 +970,6 @@ function parseBookmarksResponse(data: any): CookiePaginatedResponse {
               preview_url: m.media_url_https || m.media_url || '',
             });
           } else if (m.type === 'video' || m.type === 'animated_gif') {
-            // Get the highest bitrate video variant
             const variants = m.video_info?.variants || [];
             const mp4Variants = variants
               .filter((v: any) => v.content_type === 'video/mp4')
@@ -783,7 +984,6 @@ function parseBookmarksResponse(data: any): CookiePaginatedResponse {
           }
         }
 
-        // Also check for media in tweet's own media object
         if (media.length === 0 && tweet?.media?.length) {
           for (const m of tweet.media) {
             media.push({
@@ -816,7 +1016,6 @@ function parseBookmarksResponse(data: any): CookiePaginatedResponse {
           provider: 'cookie',
         };
 
-        // Only add if we have at least an ID
         if (bookmarkPost.id) {
           posts.push(bookmarkPost);
         }
@@ -838,9 +1037,6 @@ function parseBookmarksResponse(data: any): CookiePaginatedResponse {
   };
 }
 
-/**
- * Parse Twitter's date format ("Mon Jan 01 00:00:00 +0000 2024") to ISO string.
- */
 function parseTwitterDate(dateStr: string): string | null {
   try {
     const date = new Date(dateStr);

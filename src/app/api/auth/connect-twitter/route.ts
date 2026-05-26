@@ -2,14 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { isTwikitAvailable, twikitLoginWithCookies, xApiLoginWithOAuth2 } from '@/lib/twitter';
-import { getCookieUserInfo, validateCookies, normalizeCookies } from '@/lib/x-cookie-api';
+import { getCookieUserInfo, validateCookies, validateCookiesDetailed, normalizeCookies, constructTwid } from '@/lib/x-cookie-api';
 
 /**
  * POST /api/auth/connect-twitter
  *
  * Connect a user's X/Twitter account. Supports two methods:
  *
- * 1. Cookie-based: Provide authToken and ct0 cookies
+ * 1. Cookie-based: Provide authToken, ct0, and optionally twid cookies
  *    - Validates cookies by fetching user info from X's internal API
  *    - Stores xUserId and xUsername automatically
  *    - Works without the Python Twikit service
@@ -28,6 +28,7 @@ export async function POST(request: NextRequest) {
       // Cookie-based fields
       authToken,
       ct0,
+      twid, // Optional but recommended
       // OAuth 2.0 (X API v2) fields
       accessToken,
       refreshToken,
@@ -113,37 +114,68 @@ export async function POST(request: NextRequest) {
     } else {
       // ---- Cookie-based connection ----
       // Normalize cookies (trim whitespace, decode URL-encoding)
-      const normalized = normalizeCookies({ auth_token: authToken, ct0 });
-      const cookies: Record<string, string> = {
+      const normalized = normalizeCookies({ auth_token: authToken, ct0, twid: twid || undefined });
+      
+      // Build cookies object for storage
+      const cookiesForStorage: Record<string, string> = {
         auth_token: normalized.auth_token,
         ct0: normalized.ct0,
       };
+      if (normalized.twid) {
+        cookiesForStorage.twid = normalized.twid;
+      }
 
-      // Validate cookies by trying to fetch user info
+      // Validate cookies with detailed diagnostics
       let xUserIdFromCookies: string | null = null;
       let xUsernameFromCookies: string | null = null;
+      let validationError: string | null = null;
 
       try {
-        const userInfo = await getCookieUserInfo({ auth_token: normalized.auth_token, ct0: normalized.ct0 });
-        if (userInfo) {
-          xUserIdFromCookies = userInfo.id;
-          xUsernameFromCookies = userInfo.username;
-          console.log(`Cookie validation successful: @${userInfo.username} (ID: ${userInfo.id})`);
+        const validationResult = await validateCookiesDetailed({
+          auth_token: normalized.auth_token,
+          ct0: normalized.ct0,
+          twid: normalized.twid,
+        });
+
+        if (validationResult.valid && validationResult.user) {
+          xUserIdFromCookies = validationResult.user.id;
+          xUsernameFromCookies = validationResult.user.username;
+          console.log(`Cookie validation successful: @${validationResult.user.username} (ID: ${validationResult.user.id})`);
+          
+          // If we got user ID but no twid was provided, construct and store it
+          if (!normalized.twid && xUserIdFromCookies) {
+            const constructedTwid = constructTwid(xUserIdFromCookies);
+            cookiesForStorage.twid = constructedTwid;
+            console.log(`Constructed twid cookie from user ID: ${constructedTwid}`);
+          }
         } else {
-          console.warn('Cookie validation returned null user info - cookies may be invalid');
+          validationError = validationResult.error || 'Cookie validation returned null user info';
+          console.warn('Cookie validation failed:', validationError);
+          
+          // If the error is about missing twid, return a helpful error
+          if (validationError.includes('twid') && !normalized.twid) {
+            return NextResponse.json(
+              {
+                error: validationError,
+                needsTwid: true,
+              },
+              { status: 400 }
+            );
+          }
         }
       } catch (error) {
-        console.warn('Cookie validation failed (storing cookies anyway):', error);
-        // We still store the cookies - they might work for sync even if user info fetch fails
+        validationError = error instanceof Error ? error.message : 'Cookie validation failed';
+        console.warn('Cookie validation error:', error);
+        // We still store the cookies — they might work for sync even if user info fetch fails
       }
 
       await db.user.update({
         where: { id: session.userId },
         data: {
-          xCookies: JSON.stringify(cookies),
+          xCookies: JSON.stringify(cookiesForStorage),
           xConnected: true,
           xAccessToken: authToken,
-          xAuthMethod: 'cookie', // Changed from 'twikit' to 'cookie' to reflect direct API usage
+          xAuthMethod: 'cookie',
           // Store user info if we got it
           ...(xUserIdFromCookies && { xUserId: xUserIdFromCookies }),
           ...(xUsernameFromCookies && { xUsername: xUsernameFromCookies }),
@@ -160,7 +192,7 @@ export async function POST(request: NextRequest) {
       // Try to authenticate with the Twikit service (if available)
       if (isTwikitAvailable()) {
         try {
-          await twikitLoginWithCookies(session.userId, cookies as any, xUsernameFromCookies || undefined);
+          await twikitLoginWithCookies(session.userId, cookiesForStorage as any, xUsernameFromCookies || undefined);
         } catch (sessionErr) {
           console.warn('Failed to authenticate with Twikit service (cookies stored for direct API use):', sessionErr);
         }
@@ -176,6 +208,8 @@ export async function POST(request: NextRequest) {
             username: xUsernameFromCookies,
             twikitServiceAvailable: isTwikitAvailable(),
             cookieValidation: xUserIdFromCookies ? 'success' : 'failed',
+            validationError: validationError,
+            hasTwid: !!cookiesForStorage.twid,
           }),
         },
       });
@@ -187,6 +221,7 @@ export async function POST(request: NextRequest) {
           : 'Twitter cookies stored. They will be validated during the first sync.',
         authMethod: 'cookie',
         username: xUsernameFromCookies,
+        validationError: validationError,
       });
     }
   } catch (error) {

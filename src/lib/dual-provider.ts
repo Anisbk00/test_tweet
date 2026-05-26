@@ -93,6 +93,7 @@ async function getUserAuthInfo(userId: string) {
 
 /**
  * Parse stored cookies from the user record.
+ * Includes twid cookie if available (now required by X).
  */
 function parseCookies(user: NonNullable<Awaited<ReturnType<typeof getUserAuthInfo>>>): CookieAuth | null {
   if (!user.xCookies) return null;
@@ -100,7 +101,16 @@ function parseCookies(user: NonNullable<Awaited<ReturnType<typeof getUserAuthInf
   try {
     const cookies = JSON.parse(user.xCookies);
     if (cookies.auth_token && cookies.ct0) {
-      return { auth_token: cookies.auth_token, ct0: cookies.ct0 };
+      // Include twid if available — X now requires it for authentication
+      const result: CookieAuth = { auth_token: cookies.auth_token, ct0: cookies.ct0 };
+      if (cookies.twid) {
+        result.twid = cookies.twid;
+      }
+      // If we have user ID but no twid, construct it
+      if (!result.twid && user.xUserId) {
+        result.twid = `u=${user.xUserId}`;
+      }
+      return result;
     }
     return null;
   } catch {

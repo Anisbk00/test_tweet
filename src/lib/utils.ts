@@ -31,7 +31,12 @@ export function formatDate(dateStr: string | null): string {
 
 export function parseJSON<T>(jsonStr: string, fallback: T): T {
   try {
-    return JSON.parse(jsonStr) as T;
+    const parsed = JSON.parse(jsonStr);
+    // If we expect an array (fallback is array), ensure parsed is also an array
+    if (Array.isArray(fallback) && !Array.isArray(parsed)) {
+      return fallback;
+    }
+    return parsed as T;
   } catch {
     return fallback;
   }
