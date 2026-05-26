@@ -49,9 +49,13 @@ export function AppShell() {
           api.tags.list(),
         ]);
         if (!cancelled) {
-          setBookmarks(bookmarksRes.data || []);
-          setCollections(collectionsRes || []);
-          setTags(tagsRes || []);
+          // API returns { bookmarks: [...], pagination: {...} }
+          const bookmarksList = bookmarksRes.bookmarks || bookmarksRes.data || [];
+          const collectionsList = Array.isArray(collectionsRes) ? collectionsRes : (collectionsRes?.data || []);
+          const tagsList = Array.isArray(tagsRes) ? tagsRes : (tagsRes?.data || []);
+          setBookmarks(bookmarksList);
+          setCollections(collectionsList);
+          setTags(tagsList);
           setIsDataLoaded(true);
         }
       } catch (err) {

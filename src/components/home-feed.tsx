@@ -44,7 +44,7 @@ export function HomeFeed() {
     try {
       const result = await api.sync.trigger();
       const res = await api.bookmarks.list('limit=100');
-      setBookmarks(res.data || []);
+      setBookmarks(res.bookmarks || res.data || []);
       if (result.success) {
         toast.success(`Synced ${result.syncedCount || 0} bookmarks`);
       } else {

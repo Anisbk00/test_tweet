@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
-import { twikitLogout } from '@/lib/twitter';
+import { isTwikitAvailable, twikitLogout } from '@/lib/twitter';
 
 export async function POST(request: NextRequest) {
   try {
@@ -10,11 +10,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Try to logout from twikit-service (non-critical if fails)
-    try {
-      await twikitLogout(session.userId);
-    } catch {
-      // Ignore twikit logout errors
+    // Try to logout from twikit-service if available (non-critical if fails)
+    if (isTwikitAvailable()) {
+      try {
+        await twikitLogout(session.userId);
+      } catch {
+        // Ignore twikit logout errors
+      }
     }
 
     // Remove Twitter connection from user
