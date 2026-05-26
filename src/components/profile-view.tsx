@@ -5,7 +5,7 @@ import { motion } from 'framer-motion';
 import { useAppStore } from '@/lib/store';
 import * as api from '@/lib/api';
 import { formatCount, getInitials, getAvatarColor } from '@/lib/utils';
-import { Bookmark, FolderOpen, Tag, TrendingUp, Calendar, LogOut, RefreshCw, BarChart3, Hash, Star, Unplug, Link2, Zap, Cookie, Activity } from 'lucide-react';
+import { Bookmark, FolderOpen, Tag, TrendingUp, Calendar, LogOut, RefreshCw, BarChart3, Hash, Star, Unplug, Link2, Zap, Cookie, Activity, Shield } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface ActivityHeatmapPoint {
@@ -28,19 +28,24 @@ export function ProfileView() {
   const [creators, setCreators] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [hasOAuth2, setHasOAuth2] = useState(false);
 
   useEffect(() => {
     async function loadAnalytics() {
       setIsLoading(true);
       try {
-        const [overviewRes, activityRes, creatorsRes] = await Promise.allSettled([
+        const [overviewRes, activityRes, creatorsRes, xConfigRes] = await Promise.allSettled([
           api.analytics.overview(),
           api.analytics.activity(),
           api.analytics.creators(),
+          api.auth.getXConfig(),
         ]);
         if (overviewRes.status === 'fulfilled') setAnalytics(overviewRes.value);
         if (activityRes.status === 'fulfilled') setActivityData(activityRes.value);
         if (creatorsRes.status === 'fulfilled') setCreators(creatorsRes.value?.data || creatorsRes.value || []);
+        if (xConfigRes.status === 'fulfilled' && xConfigRes.value) {
+          setHasOAuth2((xConfigRes.value as any).hasOAuth2 === true);
+        }
       } catch (err) {
         console.error('Failed to load analytics:', err);
       }
@@ -79,6 +84,11 @@ export function ProfileView() {
     }
   }, []);
 
+  const handleOAuth2Reconnect = useCallback(() => {
+    api.auth.connectXOAuth2();
+    // This will redirect the browser to X's OAuth page
+  }, []);
+
   // Activity heatmap - last 12 weeks using REAL data from the API
   const heatmapData = (() => {
     const data: ActivityHeatmapPoint[] = [];
@@ -111,6 +121,8 @@ export function ProfileView() {
     switch (user.xAuthMethod) {
       case 'x_api':
         return { label: 'X API (OAuth 2.0)', icon: Zap, color: 'text-emerald-400', bgColor: 'bg-emerald-500/10 border-emerald-500/20' };
+      case 'cookie':
+        return { label: 'Cookie-based', icon: Cookie, color: 'text-amber-400', bgColor: 'bg-amber-500/10 border-amber-500/20' };
       case 'twikit':
         return { label: 'Twikit (Cookies)', icon: Cookie, color: 'text-amber-400', bgColor: 'bg-amber-500/10 border-amber-500/20' };
       case 'auto':
@@ -388,36 +400,76 @@ export function ProfileView() {
       {/* Logout */}
       <div className="space-y-2 mt-8">
         {/* Twitter connection status */}
-        <div className="p-4 rounded-2xl bg-card/50 border border-border/20 flex items-center gap-3">
-          <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${user?.xConnected ? 'bg-emerald-500/10 border border-emerald-500/20' : 'bg-secondary/50 border border-border/30'}`}>
-            {user?.xConnected ? (
-              <Link2 className="w-5 h-5 text-emerald-400" />
-            ) : (
-              <Unplug className="w-5 h-5 text-muted-foreground" />
+        <div className="p-4 rounded-2xl bg-card/50 border border-border/20">
+          <div className="flex items-center gap-3">
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${user?.xConnected ? 'bg-emerald-500/10 border border-emerald-500/20' : 'bg-secondary/50 border border-border/30'}`}>
+              {user?.xConnected ? (
+                <Link2 className="w-5 h-5 text-emerald-400" />
+              ) : (
+                <Unplug className="w-5 h-5 text-muted-foreground" />
+              )}
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-medium">X/Twitter</p>
+              <p className="text-xs text-muted-foreground">
+                {user?.xConnected
+                  ? `Connected as @${user.xUsername || 'user'}`
+                  : 'Not connected'}
+              </p>
+              {authMethod && (
+                <div className={`inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-md text-[10px] font-medium border ${authMethod.bgColor} ${authMethod.color}`}>
+                  <authMethod.icon className="w-2.5 h-2.5" />
+                  {authMethod.label}
+                </div>
+              )}
+            </div>
+            {user?.xConnected && (
+              <motion.button
+                whileTap={{ scale: 0.95 }}
+                onClick={handleDisconnectTwitter}
+                className="px-3 py-1.5 rounded-lg text-xs text-red-400 border border-red-400/20 hover:bg-red-400/10 transition-colors"
+              >
+                Disconnect
+              </motion.button>
             )}
           </div>
-          <div className="flex-1">
-            <p className="text-sm font-medium">X/Twitter</p>
-            <p className="text-xs text-muted-foreground">
-              {user?.xConnected
-                ? `Connected as @${user.xUsername || 'user'}`
-                : 'Not connected'}
-            </p>
-            {authMethod && (
-              <div className={`inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-md text-[10px] font-medium border ${authMethod.bgColor} ${authMethod.color}`}>
-                <authMethod.icon className="w-2.5 h-2.5" />
-                {authMethod.label}
+
+          {/* Reconnect with OAuth 2.0 — shown when connected via cookies and OAuth is available */}
+          {user?.xConnected && user?.xAuthMethod !== 'x_api' && hasOAuth2 && (
+            <div className="mt-3 pt-3 border-t border-border/10">
+              <div className="flex items-center gap-2 mb-2">
+                <Shield className="w-3.5 h-3.5 text-emerald-400/60" />
+                <p className="text-[11px] text-muted-foreground/70">
+                  Switch to OAuth 2.0 for more reliable access — no cookie expiration issues
+                </p>
               </div>
-            )}
-          </div>
-          {user?.xConnected && (
-            <motion.button
-              whileTap={{ scale: 0.95 }}
-              onClick={handleDisconnectTwitter}
-              className="px-3 py-1.5 rounded-lg text-xs text-red-400 border border-red-400/20 hover:bg-red-400/10 transition-colors"
-            >
-              Disconnect
-            </motion.button>
+              <motion.button
+                whileTap={{ scale: 0.98 }}
+                onClick={handleOAuth2Reconnect}
+                className="w-full py-2.5 rounded-lg bg-gradient-to-r from-neutral-900 to-neutral-800 text-white font-semibold text-sm flex items-center justify-center gap-2 border border-neutral-700/50 hover:shadow-lg hover:shadow-neutral-900/25 transition-shadow"
+              >
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+                </svg>
+                Reconnect with X (OAuth 2.0)
+              </motion.button>
+            </div>
+          )}
+
+          {/* Connect with OAuth 2.0 — shown when not connected and OAuth is available */}
+          {!user?.xConnected && hasOAuth2 && (
+            <div className="mt-3 pt-3 border-t border-border/10">
+              <motion.button
+                whileTap={{ scale: 0.98 }}
+                onClick={handleOAuth2Reconnect}
+                className="w-full py-2.5 rounded-lg bg-gradient-to-r from-neutral-900 to-neutral-800 text-white font-semibold text-sm flex items-center justify-center gap-2 border border-neutral-700/50 hover:shadow-lg hover:shadow-neutral-900/25 transition-shadow"
+              >
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+                </svg>
+                Sign in with X
+              </motion.button>
+            </div>
           )}
         </div>
 
