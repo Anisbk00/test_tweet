@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSession, verifyToken } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { generatePKCEPair, getOAuth2AuthorizeUrl, hasOAuth2Credentials } from '@/lib/x-api';
+import { redirectUrl } from '@/lib/url';
 
 /**
  * GET /api/auth/x/authorize
@@ -19,7 +20,7 @@ export async function GET(request: NextRequest) {
   try {
     // Check if OAuth 2.0 is configured
     if (!hasOAuth2Credentials()) {
-      const errorUrl = new URL('/', request.url);
+      const errorUrl = redirectUrl(request, '/');
       errorUrl.searchParams.set('error', 'x_oauth_not_configured');
       errorUrl.searchParams.set('error_detail', 'X OAuth 2.0 is not configured. Set X_CLIENT_ID and X_CLIENT_SECRET environment variables.');
       return NextResponse.redirect(errorUrl);
@@ -50,26 +51,28 @@ export async function GET(request: NextRequest) {
     }
 
     if (!userId) {
-      const errorUrl = new URL('/', request.url);
+      const errorUrl = redirectUrl(request, '/');
       errorUrl.searchParams.set('error', 'auth_required');
       errorUrl.searchParams.set('error_detail', 'Please sign in to connect your X account');
       return NextResponse.redirect(errorUrl);
     }
 
     // Build the redirect URI for the callback
-    // Prefer the configured env var, then the request origin, then construct from URL
+    // Prefer the configured env var, then construct from public headers
     const configuredRedirectUri = process.env.X_OAUTH_REDIRECT_URI;
-    const requestOrigin = request.headers.get('host');
-    const protocol = request.headers.get('x-forwarded-proto') || 'https';
+    const proto = request.headers.get('x-forwarded-proto') || 'https';
+    const host = request.headers.get('host');
     const redirectUri = configuredRedirectUri ||
-      (requestOrigin ? `${protocol}://${requestOrigin}/api/auth/x/callback` : undefined);
+      (host && !host.startsWith('0.0.0.0') ? `${proto}://${host}/api/auth/x/callback` : undefined);
 
     if (!redirectUri) {
-      const errorUrl = new URL('/', request.url);
+      const errorUrl = redirectUrl(request, '/');
       errorUrl.searchParams.set('error', 'x_oauth_no_redirect');
       errorUrl.searchParams.set('error_detail', 'Could not determine OAuth redirect URI. Set X_OAUTH_REDIRECT_URI environment variable.');
       return NextResponse.redirect(errorUrl);
     }
+
+    console.log('[OAuth] Authorize redirect URI:', redirectUri);
 
     // Generate PKCE pair and authorization URL directly in Next.js
     const pkce = generatePKCEPair();
@@ -116,7 +119,7 @@ export async function GET(request: NextRequest) {
     console.error('X OAuth 2.0 authorize error:', error);
 
     // Redirect to the app with an error message
-    const errorUrl = new URL('/', request.url);
+    const errorUrl = redirectUrl(request, '/');
     errorUrl.searchParams.set('error', 'x_oauth_authorize_failed');
     errorUrl.searchParams.set(
       'error_detail',

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { exchangeOAuth2Code, getMe } from '@/lib/x-api';
 import { isTwikitAvailable, xApiLoginWithOAuth2 } from '@/lib/twitter';
+import { redirectUrl } from '@/lib/url';
 
 /**
  * GET /api/auth/x/callback
@@ -26,20 +27,22 @@ export async function GET(request: NextRequest) {
     const error = searchParams.get('error');
     const errorDescription = searchParams.get('error_description');
 
+    console.log('[OAuth Callback] Received:', { code: !!code, state: !!state, error });
+
     // If X returned an error, redirect with the error
     if (error) {
-      const redirectUrl = new URL('/', request.url);
-      redirectUrl.searchParams.set('error', 'x_oauth_denied');
-      redirectUrl.searchParams.set('error_detail', errorDescription || error);
-      return NextResponse.redirect(redirectUrl);
+      const redir = redirectUrl(request, '/');
+      redir.searchParams.set('error', 'x_oauth_denied');
+      redir.searchParams.set('error_detail', errorDescription || error);
+      return NextResponse.redirect(redir);
     }
 
     // Validate required parameters
     if (!code || !state) {
-      const redirectUrl = new URL('/', request.url);
-      redirectUrl.searchParams.set('error', 'x_oauth_invalid_callback');
-      redirectUrl.searchParams.set('error_detail', 'Missing authorization code or state');
-      return NextResponse.redirect(redirectUrl);
+      const redir = redirectUrl(request, '/');
+      redir.searchParams.set('error', 'x_oauth_invalid_callback');
+      redir.searchParams.set('error_detail', 'Missing authorization code or state');
+      return NextResponse.redirect(redir);
     }
 
     // Retrieve stored OAuth 2.0 cookies
@@ -48,24 +51,34 @@ export async function GET(request: NextRequest) {
     const userId = request.cookies.get('x_oauth2_user_id')?.value;
     const redirectUri = request.cookies.get('x_oauth2_redirect_uri')?.value;
 
+    console.log('[OAuth Callback] Cookies:', {
+      hasState: !!storedState,
+      hasVerifier: !!codeVerifier,
+      hasUserId: !!userId,
+      hasRedirectUri: !!redirectUri,
+      stateMatch: storedState === state,
+    });
+
     // Validate state to prevent CSRF
     if (!storedState || state !== storedState) {
-      const redirectUrl = new URL('/', request.url);
-      redirectUrl.searchParams.set('error', 'x_oauth_invalid_state');
-      redirectUrl.searchParams.set('error_detail', 'OAuth state mismatch. Please try again.');
-      return NextResponse.redirect(redirectUrl);
+      const redir = redirectUrl(request, '/');
+      redir.searchParams.set('error', 'x_oauth_invalid_state');
+      redir.searchParams.set('error_detail', 'OAuth state mismatch. Please try again.');
+      return NextResponse.redirect(redir);
     }
 
     // Validate required cookies
     if (!codeVerifier || !userId) {
-      const redirectUrl = new URL('/', request.url);
-      redirectUrl.searchParams.set('error', 'x_oauth_expired');
-      redirectUrl.searchParams.set('error_detail', 'OAuth session expired. Please try again.');
-      return NextResponse.redirect(redirectUrl);
+      const redir = redirectUrl(request, '/');
+      redir.searchParams.set('error', 'x_oauth_expired');
+      redir.searchParams.set('error_detail', 'OAuth session expired. Please try again.');
+      return NextResponse.redirect(redir);
     }
 
     // Step 1: Exchange the authorization code for tokens directly via X API v2
+    console.log('[OAuth Callback] Exchanging code for tokens, redirectUri:', redirectUri);
     const tokenData = await exchangeOAuth2Code(code, codeVerifier, redirectUri);
+    console.log('[OAuth Callback] Token exchange successful, expires_in:', tokenData.expires_in);
 
     // Step 2: Get the authenticated user's info using the access token
     let xUserId = '';
@@ -76,9 +89,10 @@ export async function GET(request: NextRequest) {
       if (meResult) {
         xUserId = meResult.id;
         xUsername = meResult.username;
+        console.log('[OAuth Callback] Got user info:', xUsername, xUserId);
       }
     } catch (meErr) {
-      console.error('Failed to fetch user info from X API:', meErr);
+      console.error('[OAuth Callback] Failed to fetch user info from X API:', meErr);
       // Continue — we still have the tokens
     }
 
@@ -117,7 +131,7 @@ export async function GET(request: NextRequest) {
           xUsername
         );
       } catch (sessionErr) {
-        console.warn('Failed to send OAuth 2.0 tokens to Twikit service (non-critical):', sessionErr);
+        console.warn('[OAuth Callback] Failed to send OAuth 2.0 tokens to Twikit service (non-critical):', sessionErr);
       }
     }
 
@@ -135,11 +149,13 @@ export async function GET(request: NextRequest) {
     });
 
     // Clear the OAuth 2.0 cookies and redirect to the app with success
-    const redirectUrl = new URL('/', request.url);
-    redirectUrl.searchParams.set('x_connected', 'true');
-    redirectUrl.searchParams.set('x_method', 'x_api');
+    const redir = redirectUrl(request, '/');
+    redir.searchParams.set('x_connected', 'true');
+    redir.searchParams.set('x_method', 'x_api');
 
-    const response = NextResponse.redirect(redirectUrl);
+    console.log('[OAuth Callback] Success! Redirecting to:', redir.toString());
+
+    const response = NextResponse.redirect(redir);
 
     // Clear OAuth 2.0 cookies
     response.cookies.delete('x_oauth2_code_verifier');
@@ -149,14 +165,14 @@ export async function GET(request: NextRequest) {
 
     return response;
   } catch (error) {
-    console.error('X OAuth 2.0 callback error:', error);
+    console.error('[OAuth Callback] Error:', error);
 
-    const redirectUrl = new URL('/', request.url);
-    redirectUrl.searchParams.set('error', 'x_oauth_callback_failed');
-    redirectUrl.searchParams.set(
+    const redir = redirectUrl(request, '/');
+    redir.searchParams.set('error', 'x_oauth_callback_failed');
+    redir.searchParams.set(
       'error_detail',
       error instanceof Error ? error.message : 'Failed to complete OAuth 2.0 flow'
     );
-    return NextResponse.redirect(redirectUrl);
+    return NextResponse.redirect(redir);
   }
 }
