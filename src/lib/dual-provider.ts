@@ -583,8 +583,10 @@ export async function syncBookmarksDual(userId: string): Promise<SyncResult> {
       hasMore = true;
 
       const syncResult = await syncCookieBookmarks(cookies, maxPages, (page, count) => {
-        console.log(`Cookie sync page ${page}: ${count} bookmarks`);
+        console.log(`[dual-provider] Cookie sync page ${page}: ${count} bookmarks`);
       });
+
+      console.log(`[dual-provider] Cookie sync returned ${syncResult.posts.length} posts across ${syncResult.totalPages} pages`);
 
       for (const post of syncResult.posts) {
         try {
@@ -643,10 +645,18 @@ export async function syncBookmarksDual(userId: string): Promise<SyncResult> {
           errors,
         };
       }
+
+      // Cookie sync returned 0 posts — this could mean the user has no bookmarks,
+      // OR the API response structure changed and we couldn't parse any.
+      // Treat it as a soft error and fall through to next provider.
+      if (syncResult.posts.length === 0 && syncResult.totalPages === 0) {
+        console.warn('[dual-provider] Cookie sync returned 0 posts and 0 pages — API may have returned unexpected structure or user has no bookmarks');
+        errors.push('Cookie-based sync returned no bookmarks. The X API may have changed its response format, or you have no bookmarks yet.');
+      }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Cookie-based sync failed';
       errors.push(errorMsg);
-      console.warn('Cookie-based sync failed, falling back to Twikit:', error);
+      console.warn('[dual-provider] Cookie-based sync failed, falling back to Twikit:', error);
     }
   }
 
@@ -722,16 +732,18 @@ export async function syncBookmarksDual(userId: string): Promise<SyncResult> {
   if (triedMethods.length === 0) {
     guidance = 'No sync providers are available. Please connect your X account using OAuth 2.0 (recommended) or cookies.';
   } else if (cookies && !accessToken) {
-    guidance = 'Cookie authentication failed. Your cookies may have expired — please reconnect your X account. OAuth 2.0 is recommended for reliability.';
+    guidance = 'Cookie authentication failed. Your cookies may have expired — please reconnect your X account with fresh cookies (auth_token, ct0, and twid). OAuth 2.0 is recommended for reliability.';
   } else if (accessToken && !cookies) {
     guidance = 'OAuth 2.0 token may be expired or lacks required scopes (bookmark.read, users.read). Try reconnecting your X account.';
   } else {
     guidance = 'All available methods failed. Try reconnecting your X account. OAuth 2.0 is recommended for reliability.';
   }
 
+  const errorDetails = errors.length > 0 ? errors.join('; ') : 'No specific error details captured — check server logs for more information.';
+
   throw new Error(
     `All sync providers failed. Tried: ${triedMethods.join(', ') || 'none available'}. ` +
     `${guidance} ` +
-    `Details: ${errors.join('; ')}`
+    `Details: ${errorDetails}`
   );
 }

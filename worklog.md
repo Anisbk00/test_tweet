@@ -221,3 +221,29 @@ Stage Summary:
 - Invalid/empty media URLs (like empty strings) are now filtered out before being rendered
 - All 5 components that handle media URLs now use `parseMediaUrls` which validates URLs start with 'http'
 - This prevents browser "Failed to construct Image" errors from invalid src attributes
+---
+Task ID: 3
+Agent: main
+Task: Fix X GraphQL BookmarkSearchTimeline sync failure (500 Internal Server Error)
+
+Work Log:
+- Analyzed the 500 error from /api/sync/trigger — "All sync providers failed" with empty Details
+- Discovered that X's main JS bundle (main.ede5acfa.js) confirms query ID 5kB8iO1n19yXfcxM4e30Nw is still current
+- Found that X's fetchBookmarkSearch function DOES pass querySource as a variable (querySource:o)
+- Previous fix that removed querySource was wrong — it IS a valid variable, just needs the right value
+- Added querySource back to variables with empty string value for "view all bookmarks"
+- Added dual variable set approach: try WITH querySource first, then WITHOUT as fallback
+- Improved error handling throughout: x-cookie-api.ts, dual-provider.ts, sync/trigger, bookmarks/sync
+- Fixed "empty Details" in error message by adding soft error when sync returns 0 posts
+- Added /api/sync/diagnose endpoint for detailed connection diagnostics
+- Added "Diagnose Connection" button in ProfileView with diagnostic results display
+- Changed sync endpoints to return JSON error responses instead of throwing
+- Updated api.ts to surface detailed sync error messages instead of generic ones
+
+Stage Summary:
+- Key fix: Added querySource variable back to BookmarkSearchTimeline request (was wrongly removed)
+- Key fix: Try both with and without querySource for compatibility
+- Key fix: Error details now properly propagated through the chain (no more empty "Details: .")
+- New feature: /api/sync/diagnose endpoint for testing cookie validity and bookmark fetch
+- New feature: "Diagnose Connection" button in profile with visual diagnostics
+- Query ID 5kB8iO1n19yXfcxM4e30Nw is confirmed current from X's live JS bundle

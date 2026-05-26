@@ -5,7 +5,7 @@ import { motion } from 'framer-motion';
 import { useAppStore } from '@/lib/store';
 import * as api from '@/lib/api';
 import { formatCount, getInitials, getAvatarColor } from '@/lib/utils';
-import { Bookmark, FolderOpen, Tag, TrendingUp, Calendar, LogOut, RefreshCw, BarChart3, Hash, Star, Unplug, Link2, Zap, Cookie, Activity, Shield } from 'lucide-react';
+import { Bookmark, FolderOpen, Tag, TrendingUp, Calendar, LogOut, RefreshCw, BarChart3, Hash, Star, Unplug, Link2, Zap, Cookie, Activity, Shield, Stethoscope } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface ActivityHeatmapPoint {
@@ -29,6 +29,8 @@ export function ProfileView() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [hasOAuth2, setHasOAuth2] = useState(false);
+  const [diagnosis, setDiagnosis] = useState<Record<string, unknown> | null>(null);
+  const [isDiagnosing, setIsDiagnosing] = useState(false);
 
   useEffect(() => {
     async function loadAnalytics() {
@@ -63,6 +65,19 @@ export function ProfileView() {
       toast.error(err.message || 'Sync failed');
     }
     setIsSyncing(false);
+  }, []);
+
+  const handleDiagnose = useCallback(async () => {
+    setIsDiagnosing(true);
+    setDiagnosis(null);
+    try {
+      const result = await api.sync.diagnose();
+      setDiagnosis(result.diagnosis);
+      toast.success('Diagnosis complete');
+    } catch (err: any) {
+      toast.error(err.message || 'Diagnosis failed');
+    }
+    setIsDiagnosing(false);
   }, []);
 
   const handleLogout = useCallback(() => {
@@ -464,6 +479,39 @@ export function ProfileView() {
                     </svg>
                     Or use OAuth 2.0 (may not work in some browsers)
                   </motion.button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Diagnose Connection */}
+          {user?.xConnected && (
+            <div className="mt-3 pt-3 border-t border-border/10">
+              <motion.button
+                whileTap={{ scale: 0.98 }}
+                onClick={handleDiagnose}
+                disabled={isDiagnosing}
+                className="w-full py-2 rounded-lg bg-secondary/30 text-muted-foreground text-xs flex items-center justify-center gap-1.5 border border-border/20 hover:bg-secondary/50 transition-colors disabled:opacity-50"
+              >
+                <Stethoscope className={`w-3.5 h-3.5 ${isDiagnosing ? 'animate-pulse' : ''}`} />
+                {isDiagnosing ? 'Running Diagnostics...' : 'Diagnose Connection'}
+              </motion.button>
+              {diagnosis && (
+                <div className="mt-3 p-3 rounded-lg bg-secondary/20 border border-border/10 text-[11px] font-mono space-y-1.5 max-h-64 overflow-y-auto">
+                  <div className="text-muted-foreground/60 text-[10px] uppercase tracking-wider mb-1">Diagnostics Result</div>
+                  {Object.entries(diagnosis).map(([key, value]) => (
+                    <div key={key} className="flex gap-2">
+                      <span className="text-muted-foreground/70 min-w-[120px]">{key}:</span>
+                      <span className={`${
+                        value === 'success' || value === true ? 'text-emerald-400' :
+                        value === 'failed' || value === false ? 'text-red-400' :
+                        value === 'running' ? 'text-amber-400' :
+                        'text-foreground/80'
+                      }`}>
+                        {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                      </span>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>

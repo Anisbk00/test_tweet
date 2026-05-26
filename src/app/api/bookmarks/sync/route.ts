@@ -103,20 +103,24 @@ export async function POST(request: NextRequest) {
         errors: result.errors.length > 0 ? result.errors : undefined,
       });
     } catch (syncError) {
+      const errorMessage = syncError instanceof Error ? syncError.message : 'Sync failed';
+      console.error('[bookmarks/sync] Sync failed:', errorMessage);
+
       // Mark sync as failed
       await db.syncStatus.update({
         where: { userId },
         data: {
           isSyncing: false,
           errorCount: (syncStatus?.errorCount || 0) + 1,
-          lastError:
-            syncError instanceof Error
-              ? syncError.message
-              : 'Sync failed',
+          lastError: errorMessage,
         },
       });
 
-      throw syncError;
+      // Return detailed error instead of throwing
+      return NextResponse.json(
+        { error: errorMessage, success: false },
+        { status: 500 }
+      );
     }
   } catch (error) {
     console.error('Sync bookmarks error:', error);

@@ -525,7 +525,9 @@ async function cookieFetch<T>(
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`X API error (${response.status}): ${errorText.substring(0, 200)}`);
+    // Log full error for debugging
+    console.error(`[x-cookie-api] API error ${response.status} for ${path}: ${errorText.substring(0, 500)}`);
+    throw new Error(`X API error (${response.status}): ${errorText.substring(0, 500)}`);
   }
 
   return response.json();
@@ -817,17 +819,30 @@ export async function getCookieBookmarks(
     ...ALTERNATIVE_BOOKMARKS_IDS.filter(id => id !== bookmarkQueryId),
   ].filter(Boolean);
 
-  // BookmarkSearchTimeline uses rawQuery and count variables
-  // NOTE: querySource was removed — X's GraphQL schema no longer accepts it
-  // (GRAPHQL_VALIDATION_FAILED at path ["variable","querySource"]).
-  // When rawQuery is empty, all bookmarks are returned.
-  const variables: Record<string, unknown> = {
+  // BookmarkSearchTimeline variables — must match X's web client exactly.
+  // Based on X's main JS bundle (main.ede5acfa.js):
+  //   fetchBookmarkSearch:({count:r,cursor:n,querySource:o,rawQuery:l})=>
+  //     e.graphQL(s(),{rawQuery:l||"",count:r,cursor:n,querySource:o,...(0,a.g)(t)})
+  // querySource is required by the GraphQL schema — omitting it causes 422 validation errors.
+  // When viewing all bookmarks (not searching), X sends querySource as undefined
+  // (which JSON.stringify omits), but the variable MUST be present in the schema.
+  // Sending it as an empty string works for "view all bookmarks".
+  const variablesWithQuerySource: Record<string, unknown> = {
+    rawQuery: '',
+    count,
+    querySource: '',
+  };
+
+  // Also prepare variables WITHOUT querySource for fallback
+  // (in case the schema changes and querySource is no longer accepted)
+  const variablesWithoutQuerySource: Record<string, unknown> = {
     rawQuery: '',
     count,
   };
 
   if (cursor) {
-    variables.cursor = cursor;
+    variablesWithQuerySource.cursor = cursor;
+    variablesWithoutQuerySource.cursor = cursor;
   }
 
   let lastError: Error | null = null;
@@ -842,55 +857,82 @@ export async function getCookieBookmarks(
       operationName = 'Bookmarks'; // Only use old name if this is explicitly the old Bookmarks ID
     }
     
-    try {
-      const result = await cookieFetch<any>(
-        `/${queryId}/${operationName}`,
-        cookies,
-        {
-          method: 'GET',
-          params: {
-            variables: JSON.stringify(variables),
-            features: JSON.stringify(BOOKMARKS_FEATURES),
-            fieldToggles: JSON.stringify(BOOKMARKS_FIELD_TOGGLES),
-          },
-        }
-      );
+    // Try first WITH querySource, then WITHOUT (for compatibility)
+    const variableSets = [
+      { vars: variablesWithQuerySource, label: 'with querySource' },
+      { vars: variablesWithoutQuerySource, label: 'without querySource' },
+    ];
 
-      // Check if response has the expected structure
-      // New API: search_by_raw_query.bookmarks_search_timeline.timeline
-      // Old API: viewer.bookmarks_timeline.timeline
-      if (result?.data?.search_by_raw_query?.bookmarks_search_timeline !== undefined ||
-          result?.data?.viewer?.bookmarks_timeline !== undefined ||
-          result?.data?.viewer !== undefined ||
-          Array.isArray(result?.data)) {
-        // Cache this working query ID
-        cachedQueryIds.BookmarkSearchTimeline = queryId;
-        return parseBookmarksResponse(result);
-      }
-      
-      // If we get a response but it doesn't have the expected structure, try next ID
-      lastError = new Error(`Unexpected response structure for query ID ${queryId}`);
-      console.warn(`[x-cookie-api] Unexpected response for ${queryId}/${operationName}:`, JSON.stringify(result).substring(0, 300));
-    } catch (error) {
-      lastError = error instanceof Error ? error : new Error(String(error));
-      // If it's a 401/403, the cookies are invalid - no point trying other IDs
-      if (lastError.message.includes('Cookie authentication failed') || 
-          lastError.message.includes('cookies may have expired')) {
-        throw lastError;
-      }
-      // 404 means query ID is wrong, try next one
-      if (lastError.message.includes('404') || lastError.message.includes('Query not found')) {
-        console.warn(`[x-cookie-api] Query ID ${queryId} not found (404), trying next...`);
+    for (const { vars, label } of variableSets) {
+      try {
+        console.log(`[x-cookie-api] Trying ${queryId}/${operationName} (${label})`);
+        const result = await cookieFetch<any>(
+          `/${queryId}/${operationName}`,
+          cookies,
+          {
+            method: 'GET',
+            params: {
+              variables: JSON.stringify(vars),
+              features: JSON.stringify(BOOKMARKS_FEATURES),
+              fieldToggles: JSON.stringify(BOOKMARKS_FIELD_TOGGLES),
+            },
+          }
+        );
+
+        // Check if response has the expected structure
+        // New API: data.search_by_raw_query.bookmarks_search_timeline.timeline
+        // Old API: data.viewer.bookmarks_timeline.timeline
+        const hasExpectedStructure =
+          result?.data?.search_by_raw_query?.bookmarks_search_timeline !== undefined ||
+          result?.data?.viewer?.bookmarks_timeline !== undefined;
+
+        if (hasExpectedStructure) {
+          // Cache this working query ID and variable set
+          cachedQueryIds.BookmarkSearchTimeline = queryId;
+          console.log(`[x-cookie-api] Success with ${queryId}/${operationName} (${label})`);
+          return parseBookmarksResponse(result);
+        }
+
+        // Log unexpected but valid responses for debugging
+        if (result?.data) {
+          const dataKeys = Object.keys(result.data);
+          console.warn(`[x-cookie-api] Response has data but unexpected structure. Keys: ${dataKeys.join(',')}. Full:`, JSON.stringify(result).substring(0, 500));
+          
+          // Try to parse anyway — maybe the structure is slightly different
+          const parsed = parseBookmarksResponse(result);
+          if (parsed.data.length > 0) {
+            cachedQueryIds.BookmarkSearchTimeline = queryId;
+            console.log(`[x-cookie-api] Parsed ${parsed.data.length} bookmarks from unexpected structure`);
+            return parsed;
+          }
+        }
+        
+        // If we get a response but it doesn't have the expected structure
+        lastError = new Error(`Unexpected response structure for query ID ${queryId} (${label}). Response keys: ${result ? Object.keys(result).join(',') : 'none'}`);
+        console.warn(`[x-cookie-api] Unexpected response for ${queryId}/${operationName} (${label}):`, JSON.stringify(result).substring(0, 300));
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        
+        // If it's a 401/403, the cookies are invalid - no point trying other combinations
+        if (lastError.message.includes('Cookie authentication failed') || 
+            lastError.message.includes('cookies may have expired')) {
+          console.error(`[x-cookie-api] Authentication failed (${label}):`, lastError.message);
+          throw lastError;
+        }
+        // 404 means query ID is wrong
+        if (lastError.message.includes('404') || lastError.message.includes('Query not found')) {
+          console.warn(`[x-cookie-api] Query ID ${queryId} not found (404) (${label}), trying next...`);
+          break; // Skip to next queryId, no point trying different variables
+        }
+        // 422 GRAPHQL_VALIDATION_FAILED — variables/schema mismatch, try the OTHER variable set
+        if (lastError.message.includes('422') || lastError.message.includes('GRAPHQL_VALIDATION_FAILED')) {
+          console.warn(`[x-cookie-api] GraphQL validation failed for ${queryId}/${operationName} (${label}), trying alternative variables...`);
+          continue; // Try the next variable set
+        }
+        // For other errors, try next variable set
+        console.warn(`[x-cookie-api] Error for ${queryId}/${operationName} (${label}):`, lastError.message);
         continue;
       }
-      // 422 GRAPHQL_VALIDATION_FAILED — variables/schema mismatch, try next ID
-      if (lastError.message.includes('422') || lastError.message.includes('GRAPHQL_VALIDATION_FAILED')) {
-        console.warn(`[x-cookie-api] GraphQL validation failed for ${queryId}/${operationName}, trying next...`);
-        continue;
-      }
-      // For other errors, try next ID
-      console.warn(`[x-cookie-api] Error for ${queryId}/${operationName}:`, lastError.message);
-      continue;
     }
   }
 

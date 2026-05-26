@@ -7,7 +7,7 @@ import { syncBookmarksDual } from '@/lib/dual-provider';
  * POST /api/sync/trigger
  *
  * Trigger a bookmark sync using the dual-provider service.
- * Updated to use direct X API v2 + Twikit fallback.
+ * Updated to use direct X API v2 + Cookie-based + Twikit fallback.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -97,19 +97,29 @@ export async function POST(request: NextRequest) {
         provider: result.provider,
       });
     } catch (syncError) {
+      const errorMessage = syncError instanceof Error ? syncError.message : 'Sync failed';
+      console.error('[sync/trigger] Sync failed:', errorMessage);
+
       await db.syncStatus.update({
         where: { userId },
         data: {
           isSyncing: false,
           errorCount: (syncStatus?.errorCount || 0) + 1,
-          lastError: syncError instanceof Error ? syncError.message : 'Sync failed',
+          lastError: errorMessage,
         },
       });
 
-      throw syncError;
+      // Return a more detailed error response instead of throwing
+      return NextResponse.json(
+        {
+          error: errorMessage,
+          success: false,
+        },
+        { status: 500 }
+      );
     }
   } catch (error) {
-    console.error('Trigger sync error:', error);
+    console.error('[sync/trigger] Unexpected error:', error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Internal server error' },
       { status: 500 }

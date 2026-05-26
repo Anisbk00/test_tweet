@@ -34,9 +34,9 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
       throw new Error(`Authentication required: ${errorMsg}. Please log in again.`);
     }
 
-    // Special handling for 500 from sync endpoints — surface the underlying message with guidance
+    // Special handling for 500 from sync endpoints — surface the detailed error
     if (res.status === 500 && path.includes('/sync')) {
-      throw new Error(`Sync failed: ${errorMsg}. If you used cookie-based auth, your cookies may have expired — try reconnecting your X account.`);
+      throw new Error(`Sync failed: ${errorMsg}`);
     }
 
     // Generic friendly message for other server errors
@@ -196,4 +196,5 @@ export const sync = {
     hasMore: boolean;
     provider?: string;
   }>('/sync/trigger', { method: 'POST' }),
+  diagnose: () => apiFetch<{ diagnosis: Record<string, unknown> }>('/sync/diagnose'),
 };
