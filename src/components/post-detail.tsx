@@ -3,8 +3,8 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useAppStore, type Bookmark as BookmarkType } from '@/lib/store';
-import { formatCount, formatDate, parseJSON, parseMediaUrls, getInitials, getAvatarColor } from '@/lib/utils';
-import { X, Heart, MessageCircle, Repeat2, Eye, Bookmark, Share, ExternalLink, Play, Calendar, Tag, Volume2, VolumeX } from 'lucide-react';
+import { formatCount, formatDate, parseJSON, parseMediaUrls, getInitials, getAvatarColor, getMediaDisplayUrl, getMediaPlaybackUrl } from '@/lib/utils';
+import { X, Heart, MessageCircle, Repeat2, Eye, Bookmark, Share, ExternalLink, Play, Calendar, Tag } from 'lucide-react';
 
 export function PostDetail() {
   const { selectedBookmark, setDetailOpen, setSelectedBookmark } = useAppStore();
@@ -90,13 +90,16 @@ export function PostDetail() {
               {mediaUrls.map((url, i) => {
                 const type = mediaTypes[i] || 'photo';
                 const previewUrl = previewUrls[i];
+                // Use proxied URL for video playback (fixes 403 from video.twimg.com)
+                const playbackUrl = getMediaPlaybackUrl(url);
+                const displayUrl = getMediaDisplayUrl(url, previewUrl, type);
 
                 if (type === 'video') {
                   return (
-                    <div key={i} className="relative rounded-2xl overflow-hidden bg-secondary">
+                    <div key={i} className="relative rounded-2xl overflow-hidden bg-black">
                       <video
-                        src={url}
-                        poster={previewUrl || undefined}
+                        src={playbackUrl}
+                        poster={displayUrl}
                         controls
                         playsInline
                         preload="metadata"
@@ -110,8 +113,8 @@ export function PostDetail() {
                   return (
                     <div key={i} className="relative rounded-2xl overflow-hidden bg-secondary">
                       <video
-                        src={url}
-                        poster={previewUrl || undefined}
+                        src={playbackUrl}
+                        poster={displayUrl}
                         autoPlay
                         loop
                         muted
@@ -126,7 +129,7 @@ export function PostDetail() {
                 return (
                   <div key={i} className="relative rounded-2xl overflow-hidden bg-secondary">
                     <img
-                      src={url}
+                      src={displayUrl}
                       alt=""
                       className="w-full object-cover max-h-80"
                       loading="lazy"

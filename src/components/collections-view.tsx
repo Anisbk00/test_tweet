@@ -4,7 +4,7 @@ import { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAppStore } from '@/lib/store';
 import * as api from '@/lib/api';
-import { formatCount, parseJSON, parseMediaUrls } from '@/lib/utils';
+import { formatCount, parseJSON, parseMediaUrls, getMediaDisplayUrl } from '@/lib/utils';
 import { Plus, FolderOpen, MoreHorizontal, Pencil, Trash2, Bookmark, Image, Video, FileText } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -120,7 +120,12 @@ export function CollectionsView() {
             const urls = parseMediaUrls(b.mediaUrls);
             return urls.length > 0;
           });
-          const coverUrl = coverMedia ? parseMediaUrls(coverMedia.mediaUrls)[0] : null;
+          const coverUrl = coverMedia ? (() => {
+            const urls = parseMediaUrls(coverMedia.mediaUrls);
+            const types = parseJSON<string[]>(coverMedia.mediaTypes, []);
+            const previewUrls = parseMediaUrls(coverMedia.previewUrls || '[]');
+            return urls.length > 0 ? getMediaDisplayUrl(urls[0], previewUrls[0], types[0] || 'photo') : null;
+          })() : null;
 
           return (
             <motion.div
@@ -207,9 +212,10 @@ export function CollectionsView() {
                     {(() => {
                       const urls = parseMediaUrls(b.mediaUrls);
                       const types = parseJSON<string[]>(b.mediaTypes, []);
+                      const previewUrls = parseMediaUrls(b.previewUrls || '[]');
                       return urls.length > 0 ? (
                         <div className="w-10 h-10 rounded-lg overflow-hidden flex-shrink-0">
-                          <img src={urls[0]} alt="" className="w-full h-full object-cover" loading="lazy" />
+                          <img src={getMediaDisplayUrl(urls[0], previewUrls[0], types[0] || 'photo')} alt="" className="w-full h-full object-cover" loading="lazy" />
                         </div>
                       ) : (
                         <div className="w-10 h-10 rounded-lg bg-secondary/50 flex items-center justify-center flex-shrink-0">

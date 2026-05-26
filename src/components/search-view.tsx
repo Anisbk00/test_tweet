@@ -4,7 +4,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAppStore } from '@/lib/store';
 import * as api from '@/lib/api';
-import { formatCount, formatDate, parseJSON, parseMediaUrls, getInitials, getAvatarColor } from '@/lib/utils';
+import { formatCount, formatDate, parseJSON, parseMediaUrls, getInitials, getAvatarColor, getMediaDisplayUrl } from '@/lib/utils';
 import { Search, X, Filter, SlidersHorizontal, Calendar, User, Tag, Image as ImageIcon, ArrowUp } from 'lucide-react';
 
 type SearchFilter = {
@@ -243,9 +243,11 @@ export function SearchView() {
               </div>
               {(() => {
                 const urls = parseMediaUrls(bookmark.mediaUrls);
+                const types = parseJSON<string[]>(bookmark.mediaTypes, []);
+                const previewUrls = parseMediaUrls(bookmark.previewUrls || '[]');
                 return urls.length > 0 ? (
                   <div className="w-14 h-14 rounded-lg overflow-hidden flex-shrink-0">
-                    <img src={urls[0]} alt="Bookmark media" className="w-full h-full object-cover" loading="lazy" />
+                    <img src={getMediaDisplayUrl(urls[0], previewUrls[0], types[0] || 'photo')} alt="Bookmark media" className="w-full h-full object-cover" loading="lazy" />
                   </div>
                 ) : null;
               })()}

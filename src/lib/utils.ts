@@ -119,3 +119,59 @@ export function truncate(str: string, maxLen: number): string {
 export function cn(...classes: (string | boolean | undefined | null)[]): string {
   return classes.filter(Boolean).join(' ');
 }
+
+/**
+ * Convert a Twitter CDN URL to a proxied URL through our server.
+ * This is needed because Twitter's CDN (video.twimg.com) blocks
+ * direct external access with 403 errors when the Referer header
+ * isn't from x.com.
+ *
+ * For image thumbnails (pbs.twimg.com), proxying is optional since
+ * they generally work without it. But for video URLs, proxying is required.
+ */
+export function proxyMediaUrl(url: string): string {
+  if (!url || !url.startsWith('http')) return url;
+
+  try {
+    const parsed = new URL(url);
+    // Proxy video.twimg.com URLs (always 403 from external)
+    if (parsed.hostname === 'video.twimg.com' || parsed.hostname.endsWith('.video.twimg.com')) {
+      return `/api/proxy/media?url=${encodeURIComponent(url)}`;
+    }
+    // pbs.twimg.com images generally work directly, no proxy needed
+    return url;
+  } catch {
+    return url;
+  }
+}
+
+/**
+ * Get the best display URL for a media item in an <img> tag.
+ * For videos/GIFs: use the preview (thumbnail) URL if available.
+ * For photos: use the direct media URL.
+ * Also applies proxying for Twitter CDN URLs that need it.
+ */
+export function getMediaDisplayUrl(
+  mediaUrl: string,
+  previewUrl: string | undefined,
+  mediaType: string
+): string {
+  let displayUrl: string;
+
+  if ((mediaType === 'video' || mediaType === 'gif') && previewUrl) {
+    // Use thumbnail for video/GIF display in img tags
+    displayUrl = previewUrl;
+  } else {
+    displayUrl = mediaUrl;
+  }
+
+  return proxyMediaUrl(displayUrl);
+}
+
+/**
+ * Get the playback URL for a video/GIF.
+ * Applies proxying since video.twimg.com URLs always 403 externally.
+ */
+export function getMediaPlaybackUrl(url: string): string {
+  return proxyMediaUrl(url);
+}
