@@ -434,41 +434,38 @@ export function ProfileView() {
             )}
           </div>
 
-          {/* Reconnect with OAuth 2.0 — shown when connected via cookies and OAuth is available */}
-          {user?.xConnected && user?.xAuthMethod !== 'x_api' && hasOAuth2 && (
+          {/* Reconnect with X — cookie-based (recommended) or OAuth */}
+          {(!user?.xConnected || user?.xAuthMethod === 'cookie') && (
             <div className="mt-3 pt-3 border-t border-border/10">
-              <div className="flex items-center gap-2 mb-2">
-                <Shield className="w-3.5 h-3.5 text-emerald-400/60" />
-                <p className="text-[11px] text-muted-foreground/70">
-                  Switch to OAuth 2.0 for more reliable access — no cookie expiration issues
-                </p>
-              </div>
+              <p className="text-[11px] text-muted-foreground/60 mb-2">
+                {user?.xConnected ? 'Cookies expired? Reconnect to refresh your access.' : 'Connect your X account to sync bookmarks.'}
+              </p>
               <motion.button
                 whileTap={{ scale: 0.98 }}
-                onClick={handleOAuth2Reconnect}
-                className="w-full py-2.5 rounded-lg bg-gradient-to-r from-neutral-900 to-neutral-800 text-white font-semibold text-sm flex items-center justify-center gap-2 border border-neutral-700/50 hover:shadow-lg hover:shadow-neutral-900/25 transition-shadow"
+                onClick={() => {
+                  // Navigate to the connect tab in the app
+                  const event = new CustomEvent('navigate-to-connect');
+                  window.dispatchEvent(event);
+                }}
+                className="w-full py-2.5 rounded-lg bg-gradient-to-r from-amber-500/80 to-orange-500/80 text-white font-semibold text-sm flex items-center justify-center gap-2 shadow-lg shadow-amber-500/15 hover:shadow-amber-500/25 transition-shadow"
               >
-                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-                </svg>
-                Reconnect with X (OAuth 2.0)
+                <Cookie className="w-4 h-4" />
+                {user?.xConnected ? 'Reconnect with Cookies' : 'Connect with Cookies'}
               </motion.button>
-            </div>
-          )}
-
-          {/* Connect with OAuth 2.0 — shown when not connected and OAuth is available */}
-          {!user?.xConnected && hasOAuth2 && (
-            <div className="mt-3 pt-3 border-t border-border/10">
-              <motion.button
-                whileTap={{ scale: 0.98 }}
-                onClick={handleOAuth2Reconnect}
-                className="w-full py-2.5 rounded-lg bg-gradient-to-r from-neutral-900 to-neutral-800 text-white font-semibold text-sm flex items-center justify-center gap-2 border border-neutral-700/50 hover:shadow-lg hover:shadow-neutral-900/25 transition-shadow"
-              >
-                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-                </svg>
-                Sign in with X
-              </motion.button>
+              {hasOAuth2 && (
+                <div className="mt-2">
+                  <motion.button
+                    whileTap={{ scale: 0.98 }}
+                    onClick={handleOAuth2Reconnect}
+                    className="w-full py-2 rounded-lg bg-secondary/30 text-muted-foreground text-xs flex items-center justify-center gap-1.5 border border-border/20 hover:bg-secondary/50 transition-colors"
+                  >
+                    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+                    </svg>
+                    Or use OAuth 2.0 (may not work in some browsers)
+                  </motion.button>
+                </div>
+              )}
             </div>
           )}
         </div>

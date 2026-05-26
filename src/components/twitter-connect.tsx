@@ -11,12 +11,11 @@ import {
   ExternalLink,
   CheckCircle2,
   AlertCircle,
-  ChevronDown,
-  ChevronUp,
   Cookie,
   Zap,
   Info,
-  Cloud,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -33,13 +32,15 @@ export function TwitterConnect() {
   const { user, setAuth, token } = useAppStore();
   const [authToken, setAuthToken] = useState('');
   const [ct0, setCt0] = useState('');
+  const [showAuthToken, setShowAuthToken] = useState(false);
+  const [showCt0, setShowCt0] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [error, setError] = useState('');
   const [step, setStep] = useState<'input' | 'validating' | 'syncing' | 'done'>('input');
-  const [showCookieFallback, setShowCookieFallback] = useState(false);
   const [xConfig, setXConfig] = useState<XConfig | null>(null);
   const [isLoadingConfig, setIsLoadingConfig] = useState(true);
+  const [showOAuthOption, setShowOAuthOption] = useState(false);
 
   useEffect(() => {
     async function loadConfig() {
@@ -58,7 +59,6 @@ export function TwitterConnect() {
     setError('');
     try {
       api.auth.connectXOAuth2();
-      // The page will redirect to X's OAuth page
     } catch (err: any) {
       setError(err.message || 'Failed to initiate OAuth 2.0 flow');
     }
@@ -113,7 +113,6 @@ export function TwitterConnect() {
   };
 
   const oauth2Available = xConfig?.hasOAuth2 ?? false;
-  const twikitAvailable = xConfig?.hasTwikit ?? false;
 
   return (
     <div className="max-w-lg mx-auto px-4 py-12">
@@ -172,176 +171,198 @@ export function TwitterConnect() {
             </motion.div>
           )}
 
-          {/* Primary method: OAuth 2.0 */}
-          {oauth2Available && (
-            <div className="space-y-3">
-              <motion.button
-                onClick={handleOAuth2Connect}
-                disabled={isLoading}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                className="w-full py-4 rounded-xl bg-gradient-to-r from-neutral-900 to-neutral-800 text-white font-semibold shadow-lg shadow-neutral-900/25 hover:shadow-neutral-900/40 transition-shadow disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3 border border-neutral-700/50"
-              >
-                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-                </svg>
-                Sign in with X
-              </motion.button>
-
-              <div className="flex items-center gap-2 px-1">
-                <Shield className="w-3.5 h-3.5 text-emerald-400/60" />
-                <p className="text-[11px] text-muted-foreground/60">
-                  Secure OAuth 2.0 PKCE flow — your credentials are never shared
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* OAuth 2.0 not configured warning */}
-          {!oauth2Available && !isLoadingConfig && (
-            <div className="p-3 rounded-xl bg-amber-500/5 border border-amber-500/10 flex items-start gap-2">
-              <AlertCircle className="w-4 h-4 text-amber-400/60 mt-0.5 flex-shrink-0" />
-              <div>
-                <p className="text-xs font-medium text-amber-400/80">OAuth 2.0 not configured</p>
-                <p className="text-[10px] text-muted-foreground/60 mt-0.5">
-                  Set X_CLIENT_ID and X_CLIENT_SECRET in your environment variables to enable the &quot;Sign in with X&quot; button. 
-                  You can still use cookies below.
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* Divider with "or" */}
-          <div className="relative flex items-center gap-4 py-1">
-            <div className="flex-1 h-px bg-border/30" />
-            <span className="text-xs text-muted-foreground/50 font-medium">or</span>
-            <div className="flex-1 h-px bg-border/30" />
-          </div>
-
-          {/* Fallback method: Cookie-based (Twikit) */}
-          {!showCookieFallback ? (
-            <motion.button
-              onClick={() => setShowCookieFallback(true)}
-              whileHover={{ scale: 1.01 }}
-              whileTap={{ scale: 0.99 }}
-              className="w-full p-4 rounded-xl bg-secondary/30 border border-border/30 hover:bg-secondary/50 transition-colors flex items-center gap-3 text-left"
-            >
-              <Cookie className="w-5 h-5 text-amber-400/60 flex-shrink-0" />
-              <div className="flex-1">
-                <p className="text-sm font-medium">Connect with Twitter Cookies</p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  {twikitAvailable 
-                    ? 'Alternative method using cookies directly' 
-                    : 'Direct API access using your X cookies'}
-                </p>
-              </div>
-              <ChevronDown className="w-4 h-4 text-muted-foreground/50" />
-            </motion.button>
-          ) : (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              className="rounded-xl bg-secondary/20 border border-border/30 overflow-hidden"
-            >
-              <button
-                onClick={() => setShowCookieFallback(false)}
-                className="w-full p-3 flex items-center gap-2 text-left hover:bg-secondary/30 transition-colors"
-              >
-                <Cookie className="w-4 h-4 text-amber-400/60" />
-                <span className="text-xs font-medium text-muted-foreground flex-1">
-                  Connect with Twitter Cookies (Direct API)
-                </span>
-                <ChevronUp className="w-4 h-4 text-muted-foreground/50" />
-              </button>
-
-              <form onSubmit={handleCookieConnect} className="px-4 pb-4 space-y-3">
-                {/* Info note */}
-                <div className="p-3 rounded-lg bg-amber-500/5 border border-amber-500/10 flex items-start gap-2">
-                  <Info className="w-3.5 h-3.5 text-amber-400/60 mt-0.5 flex-shrink-0" />
-                  <p className="text-[11px] text-muted-foreground/70">
-                    {twikitAvailable 
-                      ? 'This method uses your Twitter cookies to access X\'s API directly. No Python service needed.'
-                      : 'Your cookies are used to access X\'s internal API directly. No additional services needed — this works on Vercel.'}
-                  </p>
+          {/* ===== PRIMARY METHOD: Cookie-based (Quick Connect) ===== */}
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.3 }}
+            className="rounded-2xl bg-gradient-to-br from-card/80 via-card/60 to-card/80 border border-border/20 overflow-hidden"
+          >
+            {/* Header */}
+            <div className="p-4 pb-0">
+              <div className="flex items-center gap-2.5 mb-1">
+                <div className="w-8 h-8 rounded-lg bg-amber-500/20 border border-amber-500/20 flex items-center justify-center">
+                  <Cookie className="w-4 h-4 text-amber-400" />
                 </div>
-
-                {/* Instructions */}
-                <div className="p-3 rounded-lg bg-card/40 border border-border/10">
-                  <h3 className="font-semibold text-xs mb-1.5 flex items-center gap-1.5">
-                    <Shield className="w-3.5 h-3.5 text-amber-400/80" />
-                    How to get your cookies
-                  </h3>
-                  <ol className="text-[10px] text-muted-foreground/70 space-y-1 list-decimal list-inside">
-                    <li>Open <a href="https://x.com" target="_blank" rel="noopener noreferrer" className="text-amber-400/80 underline inline-flex items-center gap-0.5">x.com<ExternalLink className="w-2 h-2" /></a> and log in</li>
-                    <li>Open browser DevTools (F12 or Cmd+Option+I)</li>
-                    <li>Go to Application &rarr; Cookies &rarr; https://x.com</li>
-                    <li>Find and copy the <code className="px-1 py-0.5 rounded bg-secondary/50 text-amber-400/80 font-mono">auth_token</code> value</li>
-                    <li>Find and copy the <code className="px-1 py-0.5 rounded bg-secondary/50 text-amber-400/80 font-mono">ct0</code> value</li>
-                  </ol>
-                  <p className="text-[9px] text-muted-foreground/40 mt-2">
-                    Your cookies are stored locally and encrypted. They are never shared with third parties.
-                  </p>
-                </div>
-
-                {/* auth_token input */}
                 <div>
-                  <label className="text-xs text-muted-foreground mb-1 block font-medium">auth_token</label>
+                  <h2 className="font-semibold text-sm">Quick Connect</h2>
+                  <p className="text-[11px] text-muted-foreground/60">Paste your X cookies — no redirects, works instantly</p>
+                </div>
+              </div>
+            </div>
+
+            <form onSubmit={handleCookieConnect} className="p-4 space-y-3">
+              {/* Instructions */}
+              <div className="p-3 rounded-lg bg-card/60 border border-border/10">
+                <h3 className="font-semibold text-xs mb-2 flex items-center gap-1.5">
+                  <Key className="w-3.5 h-3.5 text-amber-400/80" />
+                  How to get your cookies
+                </h3>
+                <ol className="text-[11px] text-muted-foreground/70 space-y-1.5 list-decimal list-inside">
+                  <li>Open <a href="https://x.com" target="_blank" rel="noopener noreferrer" className="text-amber-400/80 underline inline-flex items-center gap-0.5">x.com<ExternalLink className="w-2.5 h-2.5" /></a> and log in with your X account</li>
+                  <li>Open browser DevTools — press <kbd className="px-1 py-0.5 rounded bg-secondary/50 text-[10px] font-mono">F12</kbd> or <kbd className="px-1 py-0.5 rounded bg-secondary/50 text-[10px] font-mono">Cmd+Option+I</kbd></li>
+                  <li>Go to <strong>Application</strong> tab → <strong>Cookies</strong> → <code className="px-1 py-0.5 rounded bg-secondary/50 text-amber-400/80 font-mono text-[10px]">https://x.com</code></li>
+                  <li>Find <code className="px-1 py-0.5 rounded bg-secondary/50 text-amber-400/80 font-mono text-[10px]">auth_token</code> — copy the value and paste below</li>
+                  <li>Find <code className="px-1 py-0.5 rounded bg-secondary/50 text-amber-400/80 font-mono text-[10px]">ct0</code> — copy the value and paste below</li>
+                </ol>
+                <p className="text-[9px] text-muted-foreground/40 mt-2">
+                  Your cookies are stored locally and encrypted. They are never shared with third parties.
+                </p>
+              </div>
+
+              {/* auth_token input */}
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block font-medium">auth_token</label>
+                <div className="relative">
                   <input
-                    type="password"
+                    type={showAuthToken ? 'text' : 'password'}
                     placeholder="Paste your auth_token cookie value"
                     value={authToken}
                     onChange={(e) => setAuthToken(e.target.value)}
-                    className="w-full px-3 py-2.5 rounded-lg bg-secondary/50 border border-border/30 text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500/30 transition-all font-mono text-xs"
+                    className="w-full px-3 py-2.5 pr-9 rounded-lg bg-secondary/50 border border-border/30 text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500/30 transition-all font-mono text-xs"
                     required
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowAuthToken(!showAuthToken)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/40 hover:text-muted-foreground/70 transition-colors"
+                  >
+                    {showAuthToken ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
                 </div>
+              </div>
 
-                {/* ct0 input */}
-                <div>
-                  <label className="text-xs text-muted-foreground mb-1 block font-medium">ct0</label>
+              {/* ct0 input */}
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block font-medium">ct0</label>
+                <div className="relative">
                   <input
-                    type="password"
+                    type={showCt0 ? 'text' : 'password'}
                     placeholder="Paste your ct0 cookie value"
                     value={ct0}
                     onChange={(e) => setCt0(e.target.value)}
-                    className="w-full px-3 py-2.5 rounded-lg bg-secondary/50 border border-border/30 text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500/30 transition-all font-mono text-xs"
+                    className="w-full px-3 py-2.5 pr-9 rounded-lg bg-secondary/50 border border-border/30 text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500/30 transition-all font-mono text-xs"
                     required
                   />
-                </div>
-
-                {error && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -5 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="flex items-center gap-2 p-2.5 rounded-lg bg-red-500/10 border border-red-500/20 text-xs text-red-400"
+                  <button
+                    type="button"
+                    onClick={() => setShowCt0(!showCt0)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/40 hover:text-muted-foreground/70 transition-colors"
                   >
-                    <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
-                    {error}
-                  </motion.div>
-                )}
+                    {showCt0 ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+              </div>
 
-                <motion.button
-                  type="submit"
-                  disabled={isLoading || !authToken || !ct0}
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  className="w-full py-3 rounded-lg bg-gradient-to-r from-amber-500/80 to-orange-500/80 text-white font-semibold shadow-lg shadow-amber-500/15 hover:shadow-amber-500/25 transition-shadow disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-sm"
+              {error && (
+                <motion.div
+                  initial={{ opacity: 0, y: -5 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="flex items-center gap-2 p-2.5 rounded-lg bg-red-500/10 border border-red-500/20 text-xs text-red-400"
                 >
-                  {isLoading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      {step === 'validating' ? 'Validating...' : 'Syncing bookmarks...'}
-                    </>
-                  ) : (
-                    <>
-                      <Key className="w-4 h-4" />
-                      Connect & Sync
-                    </>
-                  )}
+                  <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                  {error}
+                </motion.div>
+              )}
+
+              <motion.button
+                type="submit"
+                disabled={isLoading || !authToken || !ct0}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                className="w-full py-3.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-white font-semibold shadow-lg shadow-amber-500/25 hover:shadow-amber-500/40 transition-shadow disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-sm"
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    {step === 'validating' ? 'Validating cookies...' : 'Syncing bookmarks...'}
+                  </>
+                ) : (
+                  <>
+                    <Key className="w-4 h-4" />
+                    Connect & Sync
+                  </>
+                )}
+              </motion.button>
+            </form>
+          </motion.div>
+
+          {/* ===== SECONDARY METHOD: OAuth 2.0 (advanced) ===== */}
+          {oauth2Available && (
+            <>
+              {!showOAuthOption ? (
+                <motion.button
+                  onClick={() => setShowOAuthOption(true)}
+                  whileHover={{ scale: 1.01 }}
+                  whileTap={{ scale: 0.99 }}
+                  className="w-full p-3 rounded-xl bg-secondary/20 border border-border/20 hover:bg-secondary/30 transition-colors flex items-center gap-2.5 text-left"
+                >
+                  <svg className="w-4 h-4 text-muted-foreground/50" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+                  </svg>
+                  <div className="flex-1">
+                    <p className="text-xs font-medium text-muted-foreground/70">Sign in with X (OAuth 2.0)</p>
+                    <p className="text-[10px] text-muted-foreground/40">Alternative — may not work in some browsers</p>
+                  </div>
                 </motion.button>
-              </form>
-            </motion.div>
+              ) : (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="rounded-xl bg-secondary/10 border border-border/20 overflow-hidden"
+                >
+                  <button
+                    onClick={() => setShowOAuthOption(false)}
+                    className="w-full p-3 flex items-center gap-2 text-left hover:bg-secondary/20 transition-colors"
+                  >
+                    <svg className="w-4 h-4 text-muted-foreground/50" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+                    </svg>
+                    <span className="text-xs font-medium text-muted-foreground/60 flex-1">Sign in with X (OAuth 2.0)</span>
+                  </button>
+
+                  <div className="px-4 pb-4 space-y-3">
+                    <div className="p-3 rounded-lg bg-amber-500/5 border border-amber-500/10 flex items-start gap-2">
+                      <Info className="w-3.5 h-3.5 text-amber-400/60 mt-0.5 flex-shrink-0" />
+                      <p className="text-[11px] text-muted-foreground/60">
+                        OAuth 2.0 redirects you to X&apos;s login page. It may not redirect back in some environments (like iframe previews). If it doesn&apos;t work, use the cookie method above.
+                      </p>
+                    </div>
+
+                    <motion.button
+                      onClick={handleOAuth2Connect}
+                      disabled={isLoading}
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                      className="w-full py-3 rounded-lg bg-gradient-to-r from-neutral-900 to-neutral-800 text-white font-semibold text-sm shadow-lg shadow-neutral-900/25 hover:shadow-neutral-900/40 transition-shadow disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 border border-neutral-700/50"
+                    >
+                      <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+                      </svg>
+                      Sign in with X
+                    </motion.button>
+
+                    <div className="flex items-center gap-2 px-1">
+                      <Shield className="w-3 h-3 text-emerald-400/40" />
+                      <p className="text-[10px] text-muted-foreground/40">
+                        Secure PKCE flow — credentials never shared with the app
+                      </p>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </>
+          )}
+
+          {/* OAuth 2.0 not configured — no OAuth option at all */}
+          {!oauth2Available && !isLoadingConfig && (
+            <div className="p-3 rounded-xl bg-secondary/10 border border-border/10 flex items-center gap-2">
+              <Info className="w-3.5 h-3.5 text-muted-foreground/30 flex-shrink-0" />
+              <p className="text-[10px] text-muted-foreground/30">
+                Cookie-based connection is the simplest method. No OAuth setup needed.
+              </p>
+            </div>
           )}
 
           {/* Loading config state */}
@@ -349,36 +370,6 @@ export function TwitterConnect() {
             <div className="flex items-center justify-center gap-2 py-2">
               <Loader2 className="w-4 h-4 animate-spin text-muted-foreground/50" />
               <span className="text-xs text-muted-foreground/50">Checking available connection methods...</span>
-            </div>
-          )}
-
-          {/* Config status info */}
-          {!isLoadingConfig && xConfig && (
-            <div className="space-y-1.5 px-1">
-              <div className="flex items-center gap-2 flex-wrap">
-                <div className={`w-1.5 h-1.5 rounded-full ${xConfig.hasOAuth2 ? 'bg-emerald-400' : 'bg-muted-foreground/30'}`} />
-                <span className="text-[10px] text-muted-foreground/40">
-                  OAuth 2.0 {xConfig.hasOAuth2 ? '✓' : '—'}
-                </span>
-                <div className={`w-1.5 h-1.5 rounded-full ${(xConfig as any).hasCookie ? 'bg-emerald-400' : 'bg-muted-foreground/30'}`} />
-                <span className="text-[10px] text-muted-foreground/40">
-                  Cookie {((xConfig as any).hasCookie !== false) ? '✓' : '—'}
-                </span>
-                <div className={`w-1.5 h-1.5 rounded-full ${xConfig.hasBearerToken ? 'bg-emerald-400' : 'bg-muted-foreground/30'}`} />
-                <span className="text-[10px] text-muted-foreground/40">
-                  Bearer {xConfig.hasBearerToken ? '✓' : '—'}
-                </span>
-                <div className={`w-1.5 h-1.5 rounded-full ${xConfig.hasTwikit ? 'bg-amber-400' : 'bg-muted-foreground/30'}`} />
-                <span className="text-[10px] text-muted-foreground/40">
-                  Twikit {xConfig.hasTwikit ? '✓' : '—'}
-                </span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <Cloud className="w-3 h-3 text-muted-foreground/30" />
-                <span className="text-[10px] text-muted-foreground/30">
-                  Vercel-ready • Cookie-based direct • X API v2 • Twikit optional
-                </span>
-              </div>
             </div>
           )}
         </motion.div>
