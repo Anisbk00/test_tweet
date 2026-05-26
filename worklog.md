@@ -185,3 +185,39 @@ Stage Summary:
 - Response parsing updated for new JSON structure
 - Twikit Python service now running as fallback on port 3031
 - This should fix the 404 "Query not found" error
+---
+Task ID: 1
+Agent: main
+Task: Fix GRAPHQL_VALIDATION_FAILED error for querySource variable in cookie-based X API
+
+Work Log:
+- Analyzed the error: `GRAPHQL_VALIDATION_FAILED` at path `["variable","querySource"]` - X's GraphQL API rejected the `querySource` variable
+- Fetched x.com's main JS bundle to discover current query IDs and understand the API
+- Found that x.com's frontend passes `querySource: o` where `o` can be `undefined` (omitted from JSON)
+- Our code was sending `querySource: ''` (empty string) which IS included in JSON, causing the validation error
+- Removed `querySource` from the variables in `getCookieBookmarks()` in `src/lib/x-cookie-api.ts`
+- Added 422 error handling (GRAPHQL_VALIDATION_FAILED) in the retry loop
+- Confirmed current BookmarkSearchTimeline queryId `5kB8iO1n19yXfcxM4e30Nw` matches our fallback
+
+Stage Summary:
+- Root cause: `querySource: ""` was rejected by X's GraphQL schema (should be omitted entirely, not sent as empty string)
+- Fix: Removed `querySource` from variables object in `src/lib/x-cookie-api.ts`
+- Added 422 error handling in the query ID retry loop
+- Features and fieldToggles match the current x.com JS bundle
+---
+Task ID: 2
+Agent: main
+Task: Fix 'Failed to construct Image' and invalid URL errors in frontend
+
+Work Log:
+- Added `parseMediaUrls()` function to `src/lib/utils.ts` that filters out invalid/empty URLs
+- Added `sanitizeUrl()` function for URL validation
+- Updated `post-card.tsx` to use `parseMediaUrls` instead of `parseJSON` for media URLs
+- Updated `media-gallery.tsx` to use `parseMediaUrls` for all media URL parsing
+- Updated `search-view.tsx`, `collections-view.tsx`, `post-detail.tsx` via sub-agent to use `parseMediaUrls`
+- The `.map is not a function` error is already handled by `safeBookmarks` in app-shell.tsx and `Array.isArray` checks
+
+Stage Summary:
+- Invalid/empty media URLs (like empty strings) are now filtered out before being rendered
+- All 5 components that handle media URLs now use `parseMediaUrls` which validates URLs start with 'http'
+- This prevents browser "Failed to construct Image" errors from invalid src attributes

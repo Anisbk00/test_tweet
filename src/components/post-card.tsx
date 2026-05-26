@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useAppStore, type Bookmark as BookmarkType } from '@/lib/store';
-import { formatCount, formatDate, parseJSON, getInitials, getAvatarColor } from '@/lib/utils';
+import { formatCount, formatDate, parseJSON, parseMediaUrls, getInitials, getAvatarColor } from '@/lib/utils';
 import { Heart, MessageCircle, Repeat2, Eye, Bookmark, Play, ExternalLink, MoreHorizontal } from 'lucide-react';
 
 interface PostCardProps {
@@ -14,7 +14,7 @@ interface PostCardProps {
 export function PostCard({ bookmark, variant = 'masonry' }: PostCardProps) {
   const { setSelectedBookmark, setDetailOpen } = useAppStore();
   const [isHovered, setIsHovered] = useState(false);
-  const mediaUrls = parseJSON<string[]>(bookmark.mediaUrls, []);
+  const mediaUrls = parseMediaUrls(bookmark.mediaUrls);
   const mediaTypes = parseJSON<string[]>(bookmark.mediaTypes, []);
   const hasMedia = mediaUrls.length > 0;
   const firstMediaType = mediaTypes[0] || 'photo';

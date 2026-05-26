@@ -42,6 +42,40 @@ export function parseJSON<T>(jsonStr: string, fallback: T): T {
   }
 }
 
+/**
+ * Parse JSON and filter out invalid/empty URLs from string arrays.
+ * Used for mediaUrls arrays that may contain empty strings or invalid URLs.
+ */
+export function parseMediaUrls(jsonStr: string): string[] {
+  try {
+    const parsed = JSON.parse(jsonStr);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((url: unknown) =>
+      typeof url === 'string' && url.trim().length > 0 && url.startsWith('http')
+    );
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Validate and sanitize a URL for use in img src or other contexts.
+ * Returns null if the URL is invalid or potentially dangerous.
+ */
+export function sanitizeUrl(url: string | null | undefined): string | null {
+  if (!url || typeof url !== 'string') return null;
+  const trimmed = url.trim();
+  if (!trimmed) return null;
+  try {
+    // Allow only http/https URLs
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+    return trimmed;
+  } catch {
+    return null;
+  }
+}
+
 export function getInitials(name: string | null): string {
   if (!name) return '?';
   return name

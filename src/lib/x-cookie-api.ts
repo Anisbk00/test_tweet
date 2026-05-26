@@ -817,11 +817,13 @@ export async function getCookieBookmarks(
     ...ALTERNATIVE_BOOKMARKS_IDS.filter(id => id !== bookmarkQueryId),
   ].filter(Boolean);
 
-  // BookmarkSearchTimeline uses rawQuery and querySource variables
+  // BookmarkSearchTimeline uses rawQuery and count variables
+  // NOTE: querySource was removed — X's GraphQL schema no longer accepts it
+  // (GRAPHQL_VALIDATION_FAILED at path ["variable","querySource"]).
+  // When rawQuery is empty, all bookmarks are returned.
   const variables: Record<string, unknown> = {
     rawQuery: '',
     count,
-    querySource: '',
   };
 
   if (cursor) {
@@ -879,6 +881,11 @@ export async function getCookieBookmarks(
       // 404 means query ID is wrong, try next one
       if (lastError.message.includes('404') || lastError.message.includes('Query not found')) {
         console.warn(`[x-cookie-api] Query ID ${queryId} not found (404), trying next...`);
+        continue;
+      }
+      // 422 GRAPHQL_VALIDATION_FAILED — variables/schema mismatch, try next ID
+      if (lastError.message.includes('422') || lastError.message.includes('GRAPHQL_VALIDATION_FAILED')) {
+        console.warn(`[x-cookie-api] GraphQL validation failed for ${queryId}/${operationName}, trying next...`);
         continue;
       }
       // For other errors, try next ID

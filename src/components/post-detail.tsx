@@ -2,7 +2,7 @@
 
 import { motion } from 'framer-motion';
 import { useAppStore, type Bookmark as BookmarkType } from '@/lib/store';
-import { formatCount, formatDate, parseJSON, getInitials, getAvatarColor } from '@/lib/utils';
+import { formatCount, formatDate, parseJSON, parseMediaUrls, getInitials, getAvatarColor } from '@/lib/utils';
 import { X, Heart, MessageCircle, Repeat2, Eye, Bookmark, Share, ExternalLink, Play, Calendar, Tag } from 'lucide-react';
 
 export function PostDetail() {
@@ -11,7 +11,7 @@ export function PostDetail() {
   if (!selectedBookmark) return null;
 
   const bookmark = selectedBookmark;
-  const mediaUrls = parseJSON<string[]>(bookmark.mediaUrls, []);
+  const mediaUrls = parseMediaUrls(bookmark.mediaUrls);
   const mediaTypes = parseJSON<string[]>(bookmark.mediaTypes, []);
 
   const handleClose = () => {

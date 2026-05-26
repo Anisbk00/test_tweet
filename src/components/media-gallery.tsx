@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { useAppStore } from '@/lib/store';
-import { parseJSON, formatCount } from '@/lib/utils';
+import { parseJSON, parseMediaUrls, formatCount } from '@/lib/utils';
 import { Image as ImageIcon, Film, FileImage, Grid3X3, Play } from 'lucide-react';
 
 type MediaFilter = 'all' | 'photo' | 'video' | 'gif';
@@ -15,7 +15,7 @@ export function MediaGallery() {
   const mediaBookmarks = useMemo(() => {
     return bookmarks.filter((b) => {
       const types = parseJSON<string[]>(b.mediaTypes, []);
-      const urls = parseJSON<string[]>(b.mediaUrls, []);
+      const urls = parseMediaUrls(b.mediaUrls);
       if (urls.length === 0) return false;
       if (filter === 'all') return true;
       return types.includes(filter);
@@ -24,7 +24,7 @@ export function MediaGallery() {
 
   const mediaItems = useMemo(() => {
     return mediaBookmarks.flatMap((b) => {
-      const urls = parseJSON<string[]>(b.mediaUrls, []);
+      const urls = parseMediaUrls(b.mediaUrls);
       const types = parseJSON<string[]>(b.mediaTypes, []);
       return urls.map((url, i) => ({
         url,
@@ -35,7 +35,7 @@ export function MediaGallery() {
   }, [mediaBookmarks]);
 
   const counts = useMemo(() => {
-    const all = bookmarks.filter((b) => parseJSON<string[]>(b.mediaUrls, []).length > 0);
+    const all = bookmarks.filter((b) => parseMediaUrls(b.mediaUrls).length > 0);
     return {
       all: all.length,
       photo: all.filter((b) => parseJSON<string[]>(b.mediaTypes, []).includes('photo')).length,
@@ -140,7 +140,7 @@ export function MediaGallery() {
 
               {/* Multiple media indicator */}
               {(() => {
-                const urls = parseJSON<string[]>(item.bookmark.mediaUrls, []);
+                const urls = parseMediaUrls(item.bookmark.mediaUrls);
                 return urls.length > 1 ? (
                   <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded bg-black/60 backdrop-blur-sm">
                     <span className="text-[8px] text-white font-medium">1/{urls.length}</span>
